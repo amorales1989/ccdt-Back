@@ -1,4 +1,5 @@
 const express = require('express');
+const eventsController = require('../controllers/eventsController');
 const router = express.Router();
 
 // Rutas básicas que funcionan sin controladores complejos
