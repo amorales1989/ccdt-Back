@@ -312,7 +312,7 @@ const eventsController = {
         requesterName, 
         description,
         adminEmails = [
-          process.env.ADMIN_EMAIL || 'admin@tudominio.com'
+          process.env.ADMIN_EMAIL || 'a19morales89@gmail.com'
         ]
       } = req.body;
 
