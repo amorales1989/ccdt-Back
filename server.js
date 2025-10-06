@@ -42,16 +42,16 @@ const PORT = process.env.PORT || 3001;
 app.use(helmet());
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-// CORS configuration
+// CORS configuration - CORREGIDO
 app.use(cors({
   origin: [
-    'https://ccdt.vercel.app/',
+    'https://ccdt.vercel.app',  // ✅ SIN la barra "/" al final
     'http://localhost:3000',
     'http://localhost:8080',
     'http://127.0.0.1:3000',
     'http://127.0.0.1:8080',
     process.env.FRONTEND_URL
-  ].filter(Boolean), // Esto filtra valores undefined/null
+  ].filter(Boolean),
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
@@ -115,10 +115,8 @@ app.use(errorHandler);
 // Función para inicializar el servidor
 const startServer = async () => {
   try {
-    // Probar conexión con Supabase
     console.log('🔄 Probando conexión con Supabase...');
     await testConnection();
-  
     
     // Iniciar servidor
     app.listen(PORT, () => {
