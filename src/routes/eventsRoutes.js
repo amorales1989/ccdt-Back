@@ -47,6 +47,6 @@ router.post('/', (req, res) => {
   });
 });
 
-router.post('/send-email', eventsController.sendEmail);
 router.post('/notify-new-request', eventsController.notifyNewRequest);
+router.post('/notify-request-response', eventsController.notifyRequestResponse);
 module.exports = router;

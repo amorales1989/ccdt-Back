@@ -1,8 +1,14 @@
 const { supabase } = require('../config/supabase');
-const sgMail = require('@sendgrid/mail');
+const nodemailer = require('nodemailer');
 
-// Configurar SendGrid con tu API Key
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER || 'comunidadcristianadontorcuato@gmail.com',
+    pass: process.env.EMAIL_PASSWORD || 'icyt wklz gcyv zlas'
+  }
+});
 
 const eventsController = {
   // GET /api/events
@@ -242,209 +248,305 @@ const eventsController = {
     }
   },
 
-  // POST /api/events/send-email - Endpoint genérico para enviar emails
-  sendEmail: async (req, res, next) => {
-    try {
-      const { to, subject, text, html } = req.body;
 
-      // Validar datos requeridos
-      if (!to || !subject) {
-        const validationError = new Error('Los campos "to" y "subject" son requeridos');
-        validationError.name = 'ValidationError';
-        throw validationError;
-      }
+    // POST /api/events/notify-new-request 
+  notifyNewRequest: async (req, res, next) => {
+  try {    
+    const { 
+      eventTitle, 
+      eventDate, 
+      eventTime, 
+      department, 
+      requesterName, 
+      description,
+      adminEmails,
+    } = req.body;
 
-      // Configuración del email
-      const msg = {
-        to: to,
-        from: process.env.SENDGRID_FROM_EMAIL || 'a19morales89@gmail.com',
-        subject: subject,
-        text: text || 'Email enviado desde el sistema de solicitudes',
-        html: html || `<p>${text || 'Email enviado desde el sistema de solicitudes'}</p>`
-      };
-
-      // Enviar el email
-      const response = await sgMail.send(msg);
-      
-      console.log('Email enviado exitosamente:', response[0].statusCode);
-      
-      res.status(200).json({
-        success: true,
-        message: 'Email enviado correctamente',
-        statusCode: response[0].statusCode,
-        data: {
-          messageId: response[0].headers['x-message-id'],
-          to: to,
-          subject: subject
-        }
-      });
-
-    } catch (error) {
-      console.error('Error enviando email:', error);
-      
-      // Manejar errores específicos de SendGrid
-      if (error.response) {
-        const { message, code } = error.response.body.errors[0] || {};
-        return res.status(400).json({
-          success: false,
-          message: 'Error de SendGrid al enviar email',
-          error: message || error.message,
-          code: code
-        });
-      }
-      
-      res.status(500).json({
+    if (!eventTitle || !eventDate || !requesterName) {
+      return res.status(400).json({
         success: false,
-        message: 'Error interno al enviar email',
-        error: error.message
+        message: 'Los campos "eventTitle", "eventDate" y "requesterName" son requeridos'
       });
     }
-  },
 
-  // POST /api/events/notify-new-request - Endpoint específico para notificar nueva solicitud
-  notifyNewRequest: async (req, res, next) => {
-    try {
-      const { 
-        eventTitle, 
-        eventDate, 
-        eventTime, 
-        department, 
-        requesterName, 
-        description,
-        adminEmails = [
-          process.env.ADMIN_EMAIL || 'a19morales89@gmail.com'
-        ]
-      } = req.body;
+    // Formatear la fecha de YYYY-MM-DD a DD/MM/YYYY
+    const formatDate = (dateString) => {
+      const [year, month, day] = dateString.split('-');
+      return `${day}/${month}/${year}`;
+    };
 
-      if (!eventTitle || !eventDate || !requesterName) {
-        const validationError = new Error('Los campos "eventTitle", "eventDate" y "requesterName" son requeridos');
-        validationError.name = 'ValidationError';
-        throw validationError;
-      }
+    const formattedDate = formatDate(eventDate);
 
-      // Template HTML para el email
-      const htmlTemplate = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Nueva Solicitud de Evento</title>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background-color: #007bff; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center; }
-            .content { background-color: #f8f9fa; padding: 20px; border-radius: 0 0 8px 8px; }
-            .info-row { margin-bottom: 15px; padding: 10px; background-color: white; border-radius: 4px; border-left: 4px solid #007bff; }
-            .label { font-weight: bold; color: #495057; }
-            .value { margin-top: 5px; }
-            .description-box { background-color: white; padding: 15px; border-radius: 4px; margin-top: 10px; border: 1px solid #dee2e6; }
-            .footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; color: #6c757d; font-size: 14px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>Nueva Solicitud de Evento</h1>
-              <p>Se ha registrado una nueva solicitud que requiere tu aprobación</p>
+    // Template HTML para el email
+    const htmlTemplate = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Nueva Solicitud de Evento</title>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #007bff; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center; }
+          .content { background-color: #f8f9fa; padding: 20px; border-radius: 0 0 8px 8px; }
+          .info-row { margin-bottom: 15px; padding: 10px; background-color: white; border-radius: 4px; border-left: 4px solid #007bff; }
+          .label { font-weight: bold; color: #495057; }
+          .value { margin-top: 5px; }
+          .description-box { background-color: white; padding: 15px; border-radius: 4px; margin-top: 10px; border: 1px solid #dee2e6; }
+          .footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; color: #6c757d; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Nueva Solicitud de Evento</h1>
+            <p>Se ha registrado una nueva solicitud que requiere tu aprobación</p>
+          </div>
+          
+          <div class="content">
+            <div class="info-row">
+              <div class="label">Título del Evento:</div>
+              <div class="value"><strong>${eventTitle}</strong></div>
             </div>
             
-            <div class="content">
+            <div class="info-row">
+              <div class="label">Fecha Solicitada:</div>
+              <div class="value">${formattedDate}</div>
+            </div>
+            
+            <div class="info-row">
+              <div class="label">Hora:</div>
+              <div class="value">${eventTime || 'No especificada'}</div>
+            </div>
+            
+            <div class="info-row">
+              <div class="label">Departamento:</div>
+              <div class="value">${department || 'No especificado'}</div>
+            </div>
+            
+            <div class="info-row">
+              <div class="label">Solicitante:</div>
+              <div class="value">${requesterName}</div>
+            </div>
+            
+            ${description ? `
               <div class="info-row">
-                <div class="label">Título del Evento:</div>
-                <div class="value"><strong>${eventTitle}</strong></div>
-              </div>
-              
-              <div class="info-row">
-                <div class="label">Fecha Solicitada:</div>
-                <div class="value">${eventDate}</div>
-              </div>
-              
-              <div class="info-row">
-                <div class="label">Hora:</div>
-                <div class="value">${eventTime || 'No especificada'}</div>
-              </div>
-              
-              <div class="info-row">
-                <div class="label">Departamento:</div>
-                <div class="value">${department || 'No especificado'}</div>
-              </div>
-              
-              <div class="info-row">
-                <div class="label">Solicitante:</div>
-                <div class="value">${requesterName}</div>
-              </div>
-              
-              ${description ? `
-                <div class="info-row">
-                  <div class="label">Descripción:</div>
-                  <div class="description-box">
-                    ${description.replace(/\n/g, '<br>')}
-                  </div>
+                <div class="label">Descripción:</div>
+                <div class="description-box">
+                  ${description.replace(/\n/g, '<br>')}
                 </div>
-              ` : ''}
-              
-              <div class="footer">
-                <p><strong>Acción requerida:</strong> Ingresa al sistema para revisar y aprobar/rechazar esta solicitud.</p>
-                <p>Este email fue generado automáticamente por el sistema de gestión de eventos.</p>
               </div>
+            ` : ''}
+            
+            <div class="footer">
+              <p><strong>Acción requerida:</strong> Ingresa al sistema para revisar y aprobar/rechazar esta solicitud.</p>
+              <p>Este email fue generado automáticamente por el sistema de gestión de eventos.</p>
             </div>
           </div>
-        </body>
-        </html>
-      `;
+        </div>
+      </body>
+      </html>
+    `;
 
-      const textContent = `Nueva Solicitud de Evento
+    // Enviar email a todos los administradores usando Nodemailer
+    const emailPromises = adminEmails.map(email => 
+      transporter.sendMail({
+        from: '"Sistema CCDT" <comunidadcristianadontorcuato@gmail.com>',
+        to: email,
+        subject: `Nueva solicitud de evento: ${eventTitle}`,
+        html: htmlTemplate
+      })
+    );
 
-Título: ${eventTitle}
-Fecha: ${eventDate}
-Hora: ${eventTime || 'No especificada'}
-Departamento: ${department || 'No especificado'}
-Solicitante: ${requesterName}
-
-${description ? `Descripción: ${description}` : ''}
-
-Esta solicitud requiere tu aprobación. Ingresa al sistema para revisarla.`;
-
-      // Enviar email a todos los administradores
-      const emailPromises = adminEmails.map(email => 
-        sgMail.send({
-          to: email,
-          from: process.env.SENDGRID_FROM_EMAIL || 'a19morales89@gmail.com',
-          subject: `Nueva solicitud de evento: ${eventTitle}`,
-          text: textContent,
-          html: htmlTemplate
-        })
-      );
-
-      const responses = await Promise.all(emailPromises);
-      
-      console.log(`Emails enviados exitosamente a ${adminEmails.length} administradores`);
-      
-      res.status(200).json({
-        success: true,
-        message: 'Notificaciones enviadas correctamente',
-        data: {
-          emailsSent: adminEmails.length,
-          recipients: adminEmails,
-          eventTitle: eventTitle
-        }
-      });
-
-    } catch (error) {
-      console.error('Error enviando notificaciones:', error);
-      
-      // Si hay error de SendGrid, registrarlo pero no fallar la creación del evento
-      if (error.response) {
-        console.error('SendGrid error:', error.response.body);
+    const responses = await Promise.all(emailPromises);
+    
+    
+    res.status(200).json({
+      success: true,
+      message: 'Notificaciones enviadas correctamente',
+      data: {
+        emailsSent: adminEmails.length,
+        recipients: adminEmails,
+        eventTitle: eventTitle,
+        messageIds: responses.map(r => r.messageId).filter(Boolean)
       }
-      
-      res.status(500).json({
+    });
+
+  } catch (error) {
+    console.error('Error enviando notificaciones:', error);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Error al enviar notificaciones por email',
+      error: error.message
+    });
+  }
+},
+
+  // POST /api/events/notify-request-response - Notificar respuesta de solicitud
+notifyRequestResponse: async (req, res, next) => {
+  try {    
+    const { 
+      eventTitle, 
+      eventDate, 
+      eventTime, 
+      department, 
+      requesterName,
+      requesterEmail,
+      estado, // 'aprobado' o 'rechazado'
+      adminMessage, // Mensaje opcional del administrador
+      description
+    } = req.body;
+
+    // Validaciones
+    if (!eventTitle || !eventDate || !requesterName || !requesterEmail || !estado) {
+      return res.status(400).json({
         success: false,
-        message: 'Error al enviar notificaciones por email',
-        error: error.message
+        message: 'Los campos "eventTitle", "eventDate", "requesterName", "requesterEmail" y "estado" son requeridos'
       });
     }
+
+    // Formatear la fecha de YYYY-MM-DD a DD/MM/YYYY
+    const formatDate = (dateString) => {
+      const [year, month, day] = dateString.split('-');
+      return `${day}/${month}/${year}`;
+    };
+
+    const formattedDate = formatDate(eventDate);
+
+    // Determinar el color y mensaje según el estado
+    const isApproved = estado.toLowerCase() === 'aprobado';
+    const statusColor = isApproved ? '#28a745' : '#dc3545';
+    const statusText = isApproved ? 'APROBADA' : 'RECHAZADA';
+    const statusEmoji = isApproved ? '✅' : '❌';
+
+    // Template HTML para el email
+    const htmlTemplate = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Respuesta a tu Solicitud de Evento</title>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: ${statusColor}; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center; }
+          .status-badge { background-color: rgba(255,255,255,0.2); padding: 10px 20px; border-radius: 20px; display: inline-block; margin-top: 10px; font-size: 18px; font-weight: bold; }
+          .content { background-color: #f8f9fa; padding: 20px; border-radius: 0 0 8px 8px; }
+          .info-row { margin-bottom: 15px; padding: 10px; background-color: white; border-radius: 4px; border-left: 4px solid ${statusColor}; }
+          .label { font-weight: bold; color: #495057; }
+          .value { margin-top: 5px; }
+          .message-box { background-color: #fff3cd; padding: 15px; border-radius: 4px; margin-top: 15px; border-left: 4px solid #ffc107; }
+          .description-box { background-color: white; padding: 15px; border-radius: 4px; margin-top: 10px; border: 1px solid #dee2e6; }
+          .footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; color: #6c757d; font-size: 14px; }
+          .greeting { font-size: 16px; margin-bottom: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>${statusEmoji} Solicitud ${statusText}</h1>
+            <div class="status-badge">Tu solicitud ha sido ${estado.toLowerCase()}</div>
+          </div>
+          
+          <div class="content">
+            <div class="greeting">
+              <p>Hola <strong>${requesterName}</strong>,</p>
+              <p>Te informamos que tu solicitud de evento ha sido <strong>${estado.toLowerCase()}</strong>.</p>
+            </div>
+
+            <div class="info-row">
+              <div class="label">Título del Evento:</div>
+              <div class="value"><strong>${eventTitle}</strong></div>
+            </div>
+            
+            <div class="info-row">
+              <div class="label">Fecha Solicitada:</div>
+              <div class="value">${formattedDate}</div>
+            </div>
+            
+            <div class="info-row">
+              <div class="label">Hora:</div>
+              <div class="value">${eventTime || 'No especificada'}</div>
+            </div>
+            
+            <div class="info-row">
+              <div class="label">Departamento:</div>
+              <div class="value">${department || 'No especificado'}</div>
+            </div>
+
+            ${description ? `
+              <div class="info-row">
+                <div class="label">Descripción:</div>
+                <div class="description-box">
+                  ${description.replace(/\n/g, '<br>')}
+                </div>
+              </div>
+            ` : ''}
+            
+            ${adminMessage ? `
+              <div class="message-box">
+                <div class="label">📝 Mensaje del Administrador:</div>
+                <div class="value" style="margin-top: 10px;">
+                  ${adminMessage.replace(/\n/g, '<br>')}
+                </div>
+              </div>
+            ` : ''}
+
+            ${isApproved ? `
+              <div style="background-color: #d4edda; padding: 15px; border-radius: 4px; margin-top: 15px; border-left: 4px solid #28a745;">
+                <p style="margin: 0; color: #155724;">
+                  <strong>¡Excelente noticia!</strong> Tu evento ha sido confirmado. Por favor, coordina los detalles finales con tu departamento.
+                </p>
+              </div>
+            ` : `
+              <div style="background-color: #f8d7da; padding: 15px; border-radius: 4px; margin-top: 15px; border-left: 4px solid #dc3545;">
+                <p style="margin: 0; color: #721c24;">
+                  Lamentablemente tu solicitud no pudo ser aprobada en esta ocasión. Si tienes dudas, por favor contacta con la administración.
+                </p>
+              </div>
+            `}
+            
+            <div class="footer">
+              <p>Si tienes alguna pregunta, no dudes en contactarnos.</p>
+              <p>Este email fue generado automáticamente por el sistema de gestión de eventos CCDT.</p>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    // Enviar email al solicitante usando Nodemailer
+    const info = await transporter.sendMail({
+      from: '"Sistema CCDT" <comunidadcristianadontorcuato@gmail.com>',
+      to: requesterEmail,
+      subject: `${statusEmoji} Tu solicitud "${eventTitle}" ha sido ${estado.toLowerCase()}`,
+      html: htmlTemplate
+    });
+    
+    res.status(200).json({
+      success: true,
+      message: 'Notificación enviada correctamente al solicitante',
+      data: {
+        recipient: requesterEmail,
+        requesterName: requesterName,
+        eventTitle: eventTitle,
+        estado: estado,
+        messageId: info.messageId
+      }
+    });
+
+  } catch (error) {
+    console.error('Error enviando notificación de respuesta:', error);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Error al enviar notificación por email',
+      error: error.message
+    });
   }
+}
 };
 
 module.exports = eventsController;

@@ -117,6 +117,7 @@ const startServer = async () => {
     // Probar conexión con Supabase
     console.log('🔄 Probando conexión con Supabase...');
     await testConnection();
+  
     
     // Iniciar servidor
     app.listen(PORT, () => {
