@@ -3,21 +3,24 @@ const nodemailer = require('nodemailer');
 
 
 const transporter = nodemailer.createTransport({
-  host: 'smtp.mailgun.org',
-  port: 587,
-  secure: false,
+  host: 'smtp.gmail.com',
+  port: 587,  // Cambiar de 465 a 587
+  secure: false,  // Cambiar a false para STARTTLS
   auth: {
-    user: process.env.MAILGUN_SMTP_USER,
-    pass: process.env.MAILGUN_SMTP_PASS
+    user: 'comunidadcristianadontorcuato@gmail.com',
+    pass: 'icyt wklz gcyv zlas'
+  },
+  tls: {
+    rejectUnauthorized: false  // Añadir esto para evitar errores de certificados
   }
 });
 
-// Verificar
 transporter.verify((error, success) => {
+  console.log('verificacion')
   if (error) {
-    console.error('Error Mailgun:', error);
+    console.error('Error Gmail SMTP:', error);
   } else {
-    console.log('Mailgun SMTP listo');
+    console.log('Gmail SMTP configurado correctamente');
   }
 });
 
@@ -262,6 +265,8 @@ const eventsController = {
 
     // POST /api/events/notify-new-request 
   notifyNewRequest: async (req, res, next) => {
+    debugger
+    console.log('Entro')
   try {    
     const { 
       eventTitle, 
@@ -362,7 +367,7 @@ const eventsController = {
     // Enviar email a todos los administradores usando Nodemailer
     const emailPromises = adminEmails.map(email => 
       transporter.sendMail({
-        from: '"Sistema CCDT" <ccdtapp@sandbox76103f755ed3446e8250841769b48be.mailgun.org>',
+        from: '"Sistema CCDT" <comunidadcristianadontorcuato@gmail.com>',
         to: email,
         subject: `Nueva solicitud de evento: ${eventTitle}`,
         html: htmlTemplate
@@ -530,7 +535,7 @@ notifyRequestResponse: async (req, res, next) => {
 
     // Enviar email al solicitante usando Nodemailer
     const info = await transporter.sendMail({
-      from: '"Sistema CCDT" <ccdtapp@sandbox76103f755ed3446e8250841769b48be.mailgun.org>',
+      from: '"Sistema CCDT" <comunidadcristianadontorcuato@gmail.com>',
       to: requesterEmail,
       subject: `${statusEmoji} Tu solicitud "${eventTitle}" ha sido ${estado.toLowerCase()}`,
       html: htmlTemplate
