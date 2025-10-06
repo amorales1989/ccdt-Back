@@ -265,7 +265,6 @@ const eventsController = {
 
     // POST /api/events/notify-new-request 
   notifyNewRequest: async (req, res, next) => {
-    debugger
     console.log('Entro')
   try {    
     const { 
@@ -277,22 +276,22 @@ const eventsController = {
       description,
       adminEmails,
     } = req.body;
-
+console.log('1')
     if (!eventTitle || !eventDate || !requesterName) {
       return res.status(400).json({
         success: false,
         message: 'Los campos "eventTitle", "eventDate" y "requesterName" son requeridos'
       });
     }
-
+console.log('2')
     // Formatear la fecha de YYYY-MM-DD a DD/MM/YYYY
     const formatDate = (dateString) => {
       const [year, month, day] = dateString.split('-');
       return `${day}/${month}/${year}`;
     };
-
+console.log('3')
     const formattedDate = formatDate(eventDate);
-
+console.log('4')
     // Template HTML para el email
     const htmlTemplate = `
       <!DOCTYPE html>
@@ -363,7 +362,7 @@ const eventsController = {
       </body>
       </html>
     `;
-
+console.log('5')
     // Enviar email a todos los administradores usando Nodemailer
     const emailPromises = adminEmails.map(email => 
       transporter.sendMail({
@@ -373,10 +372,10 @@ const eventsController = {
         html: htmlTemplate
       })
     );
-
+console.log('6')
     const responses = await Promise.all(emailPromises);
     
-    
+    console.log('7')
     res.status(200).json({
       success: true,
       message: 'Notificaciones enviadas correctamente',
@@ -387,7 +386,7 @@ const eventsController = {
         messageIds: responses.map(r => r.messageId).filter(Boolean)
       }
     });
-
+console.log('8')
   } catch (error) {
     console.error('Error enviando notificaciones:', error);
     
