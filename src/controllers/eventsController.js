@@ -3,10 +3,21 @@ const nodemailer = require('nodemailer');
 
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.mailgun.org',
+  port: 587,
+  secure: false,
   auth: {
-    user: process.env.EMAIL_USER || 'comunidadcristianadontorcuato@gmail.com',
-    pass: process.env.EMAIL_PASSWORD || 'icyt wklz gcyv zlas'
+    user: process.env.MAILGUN_SMTP_USER,
+    pass: process.env.MAILGUN_SMTP_PASS
+  }
+});
+
+// Verificar
+transporter.verify((error, success) => {
+  if (error) {
+    console.error('Error Mailgun:', error);
+  } else {
+    console.log('Mailgun SMTP listo');
   }
 });
 
@@ -351,7 +362,7 @@ const eventsController = {
     // Enviar email a todos los administradores usando Nodemailer
     const emailPromises = adminEmails.map(email => 
       transporter.sendMail({
-        from: '"Sistema CCDT" <comunidadcristianadontorcuato@gmail.com>',
+        from: '"Sistema CCDT" <ccdtapp@sandbox76103f755ed3446e8250841769b48be.mailgun.org>',
         to: email,
         subject: `Nueva solicitud de evento: ${eventTitle}`,
         html: htmlTemplate
@@ -519,7 +530,7 @@ notifyRequestResponse: async (req, res, next) => {
 
     // Enviar email al solicitante usando Nodemailer
     const info = await transporter.sendMail({
-      from: '"Sistema CCDT" <comunidadcristianadontorcuato@gmail.com>',
+      from: '"Sistema CCDT" <ccdtapp@sandbox76103f755ed3446e8250841769b48be.mailgun.org>',
       to: requesterEmail,
       subject: `${statusEmoji} Tu solicitud "${eventTitle}" ha sido ${estado.toLowerCase()}`,
       html: htmlTemplate
