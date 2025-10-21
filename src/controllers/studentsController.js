@@ -18,7 +18,8 @@ const studentsController = {
         .select(`
           *,
           departments (name)
-        `);
+        `)
+        .is('deleted_at', null); // Excluir estudiantes eliminados
 
       // Filtrar por departamento si se proporciona
       if (department_id) {
@@ -79,7 +80,8 @@ const studentsController = {
       // Mapear datos para incluir información del departamento
       const studentsWithDepartment = students.map(student => ({
         ...student,
-        department: student.departments?.name
+        department: student.departments?.name,
+        is_deleted: false
       }));
 
       res.json({
@@ -104,6 +106,7 @@ const studentsController = {
           departments (name)
         `)
         .eq('id', id)
+        .is('deleted_at', null)
         .single();
 
       if (error) {
@@ -117,7 +120,8 @@ const studentsController = {
 
       const studentWithDepartment = {
         ...data,
-        department: data.departments?.name
+        department: data.departments?.name,
+        is_deleted: false
       };
 
       res.json({
@@ -150,7 +154,8 @@ const studentsController = {
           assigned_class,
           departments (name)
         `)
-        .not('birthdate', 'is', null);
+        .not('birthdate', 'is', null)
+        .is('deleted_at', null);
 
       // Filtrar por departamento si se proporciona
       if (department_id) {
@@ -231,8 +236,10 @@ const studentsController = {
           gender,
           department_id,
           assigned_class,
+          nuevo,
           departments (name)
-        `);
+        `)
+        .is('deleted_at', null);
 
       // Filtrar por departamento si se proporciona
       if (department_id) {
@@ -258,13 +265,16 @@ const studentsController = {
         data.forEach(student => {
           const deptName = student.departments?.name || 'Sin departamento';
           if (!departmentStats[deptName]) {
-            departmentStats[deptName] = { male: 0, female: 0, total: 0 };
+            departmentStats[deptName] = { male: 0, female: 0, total: 0, new: 0 };
           }
           
           if (student.gender === 'masculino') {
             departmentStats[deptName].male++;
           } else if (student.gender === 'femenino') {
             departmentStats[deptName].female++;
+          }
+          if (student.nuevo) {
+            departmentStats[deptName].new++;
           }
           departmentStats[deptName].total++;
         });
@@ -275,13 +285,16 @@ const studentsController = {
         data.forEach(student => {
           const className = student.assigned_class || 'Sin clase';
           if (!classStats[className]) {
-            classStats[className] = { male: 0, female: 0, total: 0 };
+            classStats[className] = { male: 0, female: 0, total: 0, new: 0 };
           }
           
           if (student.gender === 'masculino') {
             classStats[className].male++;
           } else if (student.gender === 'femenino') {
             classStats[className].female++;
+          }
+          if (student.nuevo) {
+            classStats[className].new++;
           }
           classStats[className].total++;
         });
@@ -291,6 +304,7 @@ const studentsController = {
         stats = {
           male: data.filter(s => s.gender === 'masculino').length,
           female: data.filter(s => s.gender === 'femenino').length,
+          new: data.filter(s => s.nuevo).length,
           total: data.length
         };
       }
@@ -311,26 +325,56 @@ const studentsController = {
       const { 
         first_name, 
         last_name, 
-        birthdate, 
+        birthdate,
         gender, 
-        department_id, 
-        assigned_class 
+        department_id,
+        department,
+        assigned_class,
+        phone,
+        address,
+        document_number,
+        nuevo
       } = req.body;
 
       // Validaciones básicas
-      if (!first_name || !last_name || !birthdate || !gender || !department_id) {
-        const validationError = new Error('Los campos first_name, last_name, birthdate, gender y department_id son requeridos');
+      if (!first_name || first_name.trim() === '') {
+        const validationError = new Error('El nombre es requerido');
         validationError.name = 'ValidationError';
         throw validationError;
       }
 
+      // Validar DNI duplicado si se proporciona
+      if (document_number && document_number.trim() !== '') {
+        const { data: existingStudent, error: searchError } = await supabase
+          .from('students')
+          .select('id, first_name, last_name')
+          .eq('document_number', document_number.trim())
+          .is('deleted_at', null)
+          .maybeSingle();
+
+        if (searchError) throw searchError;
+
+        if (existingStudent) {
+          const duplicateError = new Error(`El DNI ${document_number} ya está registrado en el sistema`);
+          duplicateError.name = 'DuplicateError';
+          duplicateError.status = 409;
+          throw duplicateError;
+        }
+      }
+
+      // Solo incluir campos que existen en la tabla
       const studentData = {
         first_name: first_name.trim(),
-        last_name: last_name.trim(),
-        birthdate,
-        gender,
-        department_id,
-        assigned_class: assigned_class || null
+        last_name: last_name ? last_name.trim() : '',
+        birthdate: birthdate || null,
+        gender: gender || 'masculino',
+        department_id: department_id || null,
+        department: department || null,
+        assigned_class: assigned_class || null,
+        phone: phone || null,
+        address: address ? address.trim() : null,
+        document_number: document_number ? document_number.trim() : null,
+        nuevo: nuevo !== undefined ? nuevo : true
       };
 
       const { data, error } = await supabase
@@ -348,7 +392,8 @@ const studentsController = {
 
       const studentWithDepartment = {
         ...data,
-        department: data.departments?.name
+        department: data.departments?.name || data.department,
+        is_deleted: false
       };
 
       res.status(201).json({
@@ -367,17 +412,58 @@ const studentsController = {
       const { id } = req.params;
       const updates = req.body;
 
-      // Limpiar nombres si se proporcionan
-      if (updates.first_name) {
-        updates.first_name = updates.first_name.trim();
+      // Verificar que el estudiante existe
+      const { data: existingStudent, error: fetchError } = await supabase
+        .from('students')
+        .select('id, document_number')
+        .eq('id', id)
+        .is('deleted_at', null)
+        .single();
+
+      if (fetchError) {
+        if (fetchError.code === 'PGRST116') {
+          const notFoundError = new Error('Estudiante no encontrado');
+          notFoundError.status = 404;
+          throw notFoundError;
+        }
+        throw fetchError;
       }
-      if (updates.last_name) {
-        updates.last_name = updates.last_name.trim();
+
+      // Validar DNI duplicado si se actualiza
+      if (updates.document_number && updates.document_number !== existingStudent.document_number) {
+        const { data: duplicateStudent, error: searchError } = await supabase
+          .from('students')
+          .select('id')
+          .eq('document_number', updates.document_number)
+          .neq('id', id)
+          .is('deleted_at', null)
+          .maybeSingle();
+
+        if (searchError) throw searchError;
+
+        if (duplicateStudent) {
+          const duplicateError = new Error(`El DNI ${updates.document_number} ya está registrado en otro estudiante`);
+          duplicateError.name = 'DuplicateError';
+          duplicateError.status = 409;
+          throw duplicateError;
+        }
       }
+
+      // Limpiar y preparar datos
+      const cleanUpdates = {};
+      Object.keys(updates).forEach(key => {
+        if (updates[key] !== undefined) {
+          if (typeof updates[key] === 'string' && key !== 'gender') {
+            cleanUpdates[key] = updates[key].trim() || null;
+          } else {
+            cleanUpdates[key] = updates[key];
+          }
+        }
+      });
 
       const { data, error } = await supabase
         .from('students')
-        .update(updates)
+        .update(cleanUpdates)
         .eq('id', id)
         .select(`
           *,
@@ -386,17 +472,13 @@ const studentsController = {
         .single();
 
       if (error) {
-        if (error.code === 'PGRST116') {
-          const notFoundError = new Error('Estudiante no encontrado');
-          notFoundError.status = 404;
-          throw notFoundError;
-        }
         throw error;
       }
 
       const studentWithDepartment = {
         ...data,
-        department: data.departments?.name
+        department: data.departments?.name || data.department,
+        is_deleted: false
       };
 
       res.json({
@@ -409,14 +491,32 @@ const studentsController = {
     }
   },
 
-  // DELETE /api/students/:id
+  // DELETE /api/students/:id - Soft delete
   delete: async (req, res, next) => {
     try {
       const { id } = req.params;
 
+      // Verificar que el estudiante existe y no está eliminado
+      const { data: existingStudent, error: fetchError } = await supabase
+        .from('students')
+        .select('id')
+        .eq('id', id)
+        .is('deleted_at', null)
+        .single();
+
+      if (fetchError) {
+        if (fetchError.code === 'PGRST116') {
+          const notFoundError = new Error('Estudiante no encontrado');
+          notFoundError.status = 404;
+          throw notFoundError;
+        }
+        throw fetchError;
+      }
+
+      // Soft delete: marcar como eliminado
       const { error } = await supabase
         .from('students')
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq('id', id);
 
       if (error) {
@@ -435,16 +535,7 @@ const studentsController = {
   // GET /api/students/search
   search: async (req, res, next) => {
     try {
-      const { q, department_id, assigned_class, limit = 20 } = req.query;
-
-      if (!q || q.trim().length < 2) {
-        return res.json({
-          success: true,
-          data: [],
-          count: 0,
-          message: 'Se requiere al menos 2 caracteres para la búsqueda'
-        });
-      }
+      const { q, document_number, department_id, assigned_class, limit = 20 } = req.query;
 
       let query = supabase
         .from('students')
@@ -452,7 +543,24 @@ const studentsController = {
           *,
           departments (name)
         `)
-        .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%`);
+        .is('deleted_at', null);
+
+      // Búsqueda específica por DNI
+      if (document_number) {
+        query = query.eq('document_number', document_number);
+      }
+      // Búsqueda por nombre/apellido
+      else if (q) {
+        if (q.trim().length < 2) {
+          return res.json({
+            success: true,
+            data: [],
+            count: 0,
+            message: 'Se requiere al menos 2 caracteres para la búsqueda'
+          });
+        }
+        query = query.or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%`);
+      }
 
       // Filtros opcionales
       if (department_id) {
@@ -472,8 +580,9 @@ const studentsController = {
 
       const studentsWithDepartment = data.map(student => ({
         ...student,
-        department: student.departments?.name,
-        fullName: `${student.first_name?.trim() || ''} ${student.last_name?.trim() || ''}`
+        department: student.departments?.name || student.department,
+        fullName: `${student.first_name?.trim() || ''} ${student.last_name?.trim() || ''}`,
+        is_deleted: false
       }));
 
       res.json({
