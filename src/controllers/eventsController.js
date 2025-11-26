@@ -1,6 +1,7 @@
 const { supabase } = require('../config/supabase');
 const nodemailer = require('nodemailer');
 const axios = require('axios');
+const NotificationService = require('../services/notificationService');
 
 
 const { Resend } = require('resend');
@@ -321,7 +322,24 @@ notifyNewRequest: async (req, res, next) => {
         error: n8nError.message
       });
     }
-
+// ✅ Enviar notificación push FCM a usuarios con rol secr.-calendario
+try {
+  await NotificationService.enviarPorRol('secr.-calendario', {
+    titulo: '🆕 Nueva Solicitud de Evento',
+    cuerpo: `${requesterName} solicitó: ${eventTitle} - ${adjustedDateForN8n}`
+  }, {
+    tipo: 'nuevo_evento',
+    eventTitle,
+    eventDate: adjustedDateForN8n,
+    eventTime: eventTime || '',
+    department: department || '',
+    requesterName,
+    description: description || ''
+  }, '/events/requests');
+  
+} catch (fcmError) {
+  console.error('❌ Error enviando notificación push:', fcmError.message);
+}
     res.status(200).json({
       success: true,
       message: 'Notificación enviada correctamente a n8n',
@@ -354,7 +372,8 @@ notifyNewRequest: async (req, res, next) => {
       requesterEmail,
       estado,
       adminMessage,
-      description
+      description,
+      solicitante_id 
     } = req.body;
 
     if (!eventTitle || !eventDate || !requesterName || !requesterEmail || !estado) {
@@ -411,7 +430,41 @@ notifyNewRequest: async (req, res, next) => {
         error: n8nError.message
       });
     }
+    // ✅ Enviar notificación push FCM al solicitante
+    try {
+      
+      if (!solicitante_id) {
+        console.log('⚠️ No se proporcionó solicitante_id, no se enviará notificación push');
+      } else {
+        const notificationTitle = isApproved 
+          ? '✅ Solicitud Aprobada' 
+          : '❌ Solicitud Rechazada';
+        
+        const notificationBody = isApproved
+          ? `Tu evento "${eventTitle}" ha sido aprobado`
+          : `Tu evento "${eventTitle}" ha sido rechazado`;
 
+        await NotificationService.enviarAUsuario(solicitante_id, {
+          titulo: notificationTitle,
+          cuerpo: notificationBody
+        }, {
+          tipo: isApproved ? 'evento_aprobado' : 'evento_rechazado',
+          eventTitle,
+          eventDate: adjustedDateForN8n,
+          eventTime: eventTime || '',
+          department: department || '',
+          requesterName,
+          estado,
+          adminMessage: adminMessage || '',
+          description: description || ''
+        }, '/events');
+        
+      }
+    } catch (fcmError) {
+      console.error('❌ Error enviando notificación push:', fcmError.message);
+      // No fallar si FCM falla
+    }
+    
     res.status(200).json({
       success: true,
       message: 'Notificación enviada correctamente a n8n',

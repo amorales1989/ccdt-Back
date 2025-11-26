@@ -9,8 +9,7 @@ const { testConnection } = require('./src/config/supabase');
 const { errorHandler, notFound } = require('./src/middleware/errorHandler');
 
 // Importar rutas con manejo de errores
-let eventsRoutes, studentsRoutes, departmentsRoutes, authorizationsRoutes;
-
+let eventsRoutes, studentsRoutes, departmentsRoutes, authorizationsRoutes, fcmRoutes;
 try {
   eventsRoutes = require('./src/routes/eventsRoutes');
 } catch (error) {
@@ -33,6 +32,12 @@ try {
   authorizationsRoutes = require('./src/routes/authorizationsRoutes');
 } catch (error) {
   console.error('❌ Error loading authorizations routes:', error.message);
+}
+
+try {
+  fcmRoutes = require('./src/routes/fcmRoutes');
+} catch (error) {
+  console.error('❌ Error loading fcm routes:', error.message);
 }
 
 const app = express();
@@ -89,7 +94,8 @@ app.get('/', (req, res) => {
       ...(eventsRoutes && { events: '/api/events' }),
       ...(studentsRoutes && { students: '/api/students' }),
       ...(departmentsRoutes && { departments: '/api/departments' }),
-      ...(authorizationsRoutes && { authorizations: '/api/authorizations' })
+      ...(authorizationsRoutes && { authorizations: '/api/authorizations' }),
+      ...(fcmRoutes && { fcm: '/api/tokens, /api/fcm/temas' })
     }
   });
 });
@@ -122,6 +128,10 @@ if (departmentsRoutes) {
 
 if (authorizationsRoutes) {
   app.use('/api/authorizations', authorizationsRoutes);
+}
+
+if (fcmRoutes) {
+  app.use('/api', fcmRoutes);
 }
 
 // Middleware de manejo de errores (debe ir al final)
