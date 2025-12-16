@@ -50,6 +50,7 @@ exports.registrarToken = async (req, res) => {
           plataforma: plataforma,
          // id_local: idLocal,
           //empresa_id: req.user.empresaId
+          role: role,
         });
 
       if (errorInsert) throw errorInsert;
