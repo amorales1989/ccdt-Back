@@ -9,6 +9,8 @@ class WhatsAppService {
         this.isConnected = false;
         this.isShuttingDown = false;
         this.authFolder = path.join(__dirname, '../../auth_info_baileys');
+        this.instanceId = Math.random().toString(36).substring(7); // ID para identificar esta instancia en logs de Render
+        this.conflictCount = 0;
 
         // Asegurar que existe la carpeta de auth
         if (!fs.existsSync(this.authFolder)) {
@@ -20,72 +22,77 @@ class WhatsAppService {
         if (this.isShuttingDown) return;
 
         try {
-            console.log('🔄 [WhatsApp] Inicializando servicio...');
+            console.log(`🔄 [WhatsApp][${this.instanceId}] Inicializando servicio...`);
 
             const { state, saveCreds } = await useMultiFileAuthState(this.authFolder);
 
             this.sock = makeWASocket({
                 auth: state,
                 defaultQueryTimeoutMs: undefined,
+                logger: require('pino')({ level: 'error' })
             });
 
             this.sock.ev.on('connection.update', (update) => {
                 const { connection, lastDisconnect, qr } = update;
 
                 if (qr) {
-                    console.log('📱 [WhatsApp] Escanea este QR para iniciar sesión:');
+                    console.log(`📱 [WhatsApp][${this.instanceId}] Escanea este QR para iniciar sesión:`);
                     qrcode.generate(qr, { small: true });
                 }
 
                 if (connection === 'close') {
                     if (this.isShuttingDown) {
-                        console.log('❌ [WhatsApp] Conexión cerrada por apagado.');
+                        console.log(`❌ [WhatsApp][${this.instanceId}] Conexión cerrada por apagado.`);
                         return;
                     }
 
                     const statusCode = (lastDisconnect?.error)?.output?.statusCode;
                     const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
-                    console.log(`❌ [WhatsApp] Conexión cerrada (Status: ${statusCode}). Reconectando: ${shouldReconnect}`);
+                    console.log(`❌ [WhatsApp][${this.instanceId}] Conexión cerrada (Status: ${statusCode}). Reconectando: ${shouldReconnect}`);
 
                     if (shouldReconnect) {
-                        // En Render, si hay conflicto (440), esperamos 30s para que la otra instancia muera
                         const isConflict = statusCode === DisconnectReason.connectionReplaced;
-                        const delay = isConflict ? 30000 : 5000;
+                        let delay = 5000;
 
                         if (isConflict) {
-                            console.warn('⚠️ [WhatsApp] Conflicto de sesión (440). Esperando 30s...');
+                            this.conflictCount++;
+                            // 60s primer conflicto, 120s si persiste
+                            delay = this.conflictCount > 1 ? 120000 : 60000;
+                            console.warn(`⚠️ [WhatsApp][${this.instanceId}] Conflicto (440) #${this.conflictCount}. Reintentando en ${delay / 1000}s...`);
+                        } else {
+                            this.conflictCount = 0;
                         }
 
                         setTimeout(() => this.initialize(), delay);
                     } else {
-                        console.log('🔒 [WhatsApp] Sesión cerrada definitivamente.');
+                        console.log(`🔒 [WhatsApp][${this.instanceId}] Sesión cerrada definitivamente.`);
                         this.isConnected = false;
                     }
                 } else if (connection === 'open') {
-                    console.log('✅ [WhatsApp] Conexión establecida exitosamente');
+                    console.log(`✅ [WhatsApp][${this.instanceId}] Conexión establecida exitosamente`);
                     this.isConnected = true;
+                    this.conflictCount = 0;
                 }
             });
 
             this.sock.ev.on('creds.update', saveCreds);
 
         } catch (error) {
-            console.error('❌ [WhatsApp] Error al inicializar:', error);
+            console.error(`❌ [WhatsApp][${this.instanceId}] Error al inicializar:`, error);
         }
     }
 
-    async logout() {
+    async shutdown() {
         this.isShuttingDown = true;
         if (this.sock) {
-            console.log('📤 [WhatsApp] Cerrando conexión voluntariamente...');
+            console.log(`📤 [WhatsApp][${this.instanceId}] Cerrando conexión de forma segura...`);
             try {
-                // logout() cierra la conexión y notifica al servidor de WA para liberar la sesión
-                await this.sock.logout();
+                this.sock.ws.close();
                 this.sock = null;
                 this.isConnected = false;
             } catch (err) {
-                console.error('❌ [WhatsApp] Error durante logout:', err.message);
+                console.error(`❌ [WhatsApp][${this.instanceId}] Error durante shutdown:`, err.message);
             }
         }
     }

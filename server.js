@@ -186,9 +186,9 @@ const gracefulShutdown = async (signal) => {
   console.log(`\n🛑 Se recibió ${signal}. Cerrando servicios de forma segura...`);
 
   try {
-    // Intentar cerrar sesión de WhatsApp para liberar el dispositivo
+    // Intentar cerrar la sesión de WhatsApp de forma segura sin desvincular el dispositivo
     const WhatsAppService = require('./src/services/whatsappService');
-    await WhatsAppService.logout();
+    await WhatsAppService.shutdown();
     console.log('✅ WhatsApp desconectado correctamente.');
   } catch (err) {
     console.error('⚠️ Error al cerrar WhatsApp:', err.message);
