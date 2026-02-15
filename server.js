@@ -180,3 +180,23 @@ WhatsAppService.initialize();
 
 // Inicializar servidor
 startServer();
+
+// --- Manejo de Apagado Controlado (Graceful Shutdown) ---
+const gracefulShutdown = async (signal) => {
+  console.log(`\n🛑 Se recibió ${signal}. Cerrando servicios de forma segura...`);
+
+  try {
+    // Intentar cerrar sesión de WhatsApp para liberar el dispositivo
+    const WhatsAppService = require('./src/services/whatsappService');
+    await WhatsAppService.logout();
+    console.log('✅ WhatsApp desconectado correctamente.');
+  } catch (err) {
+    console.error('⚠️ Error al cerrar WhatsApp:', err.message);
+  }
+
+  console.log('👋 Backend finalizado.');
+  process.exit(0);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
