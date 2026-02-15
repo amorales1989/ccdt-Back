@@ -10,25 +10,6 @@ const { Resend } = require('resend');
 
 const resend = new Resend('re_UV2bZBBj_5DpDPTZM2KnYnFfZ3ejNzoXr');
 
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,  // Cambiar de 465 a 587
-  secure: false,  // Cambiar a false para STARTTLS
-  auth: {
-    user: 'comunidadcristianadontorcuato@gmail.com',
-    pass: 'icyt wklz gcyv zlas'
-  },
-  tls: {
-    rejectUnauthorized: false  // Añadir esto para evitar errores de certificados
-  }
-});
-
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('Error Gmail SMTP:', error);
-  }
-});
-
 const eventsController = {
   // GET /api/events
   getAll: async (req, res, next) => {

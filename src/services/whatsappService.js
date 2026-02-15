@@ -7,9 +7,10 @@ class WhatsAppService {
     constructor() {
         this.sock = null;
         this.isConnected = false;
+        this.isConnecting = false;
         this.isShuttingDown = false;
         this.authFolder = path.join(__dirname, '../../auth_info_baileys');
-        this.instanceId = Math.random().toString(36).substring(7); // ID para identificar esta instancia en logs de Render
+        this.instanceId = Math.random().toString(36).substring(7);
         this.conflictCount = 0;
 
         // Asegurar que existe la carpeta de auth
@@ -19,7 +20,8 @@ class WhatsAppService {
     }
 
     async initialize() {
-        if (this.isShuttingDown) return;
+        if (this.isShuttingDown || this.isConnecting) return;
+        this.isConnecting = true;
 
         try {
             console.log(`🔄 [WhatsApp][${this.instanceId}] Inicializando servicio...`);
@@ -41,6 +43,7 @@ class WhatsAppService {
                 }
 
                 if (connection === 'close') {
+                    this.isConnecting = false;
                     if (this.isShuttingDown) {
                         console.log(`❌ [WhatsApp][${this.instanceId}] Conexión cerrada por apagado.`);
                         return;
@@ -53,13 +56,16 @@ class WhatsAppService {
 
                     if (shouldReconnect) {
                         const isConflict = statusCode === DisconnectReason.connectionReplaced;
-                        let delay = 5000;
+
+                        // Jitter: añadir aleatoriedad para evitar sincronización (base 5s)
+                        const jitter = Math.floor(Math.random() * 8000);
+                        let delay = 5000 + jitter;
 
                         if (isConflict) {
                             this.conflictCount++;
-                            // 60s primer conflicto, 120s si persiste
-                            delay = this.conflictCount > 1 ? 120000 : 60000;
-                            console.warn(`⚠️ [WhatsApp][${this.instanceId}] Conflicto (440) #${this.conflictCount}. Reintentando en ${delay / 1000}s...`);
+                            // Backoff: 45s, 90s, 180s... + jitter
+                            delay = (Math.pow(2, this.conflictCount - 1) * 45000) + jitter;
+                            console.warn(`⚠️ [WhatsApp][${this.instanceId}] Conflicto #${this.conflictCount}. Reintentando en ${Math.round(delay / 1000)}s...`);
                         } else {
                             this.conflictCount = 0;
                         }
@@ -72,6 +78,7 @@ class WhatsAppService {
                 } else if (connection === 'open') {
                     console.log(`✅ [WhatsApp][${this.instanceId}] Conexión establecida exitosamente`);
                     this.isConnected = true;
+                    this.isConnecting = false;
                     this.conflictCount = 0;
                 }
             });
