@@ -22,9 +22,8 @@ class WhatsAppService {
             const { state, saveCreds } = await useMultiFileAuthState(this.authFolder);
 
             this.sock = makeWASocket({
-                printQRInTerminal: true, // Esto imprimirá el QR automáticamente si no hay sesión
                 auth: state,
-                defaultQueryTimeoutMs: undefined, // Evitar timeouts en algunas queries
+                defaultQueryTimeoutMs: undefined,
             });
 
             this.sock.ev.on('connection.update', (update) => {
@@ -36,13 +35,17 @@ class WhatsAppService {
                 }
 
                 if (connection === 'close') {
-                    const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-                    console.log('❌ [WhatsApp] Conexión cerrada. Reconectando:', shouldReconnect);
+                    const statusCode = (lastDisconnect?.error)?.output?.statusCode;
+                    const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+
+                    console.log(`❌ [WhatsApp] Conexión cerrada (Status: ${statusCode}). Reconectando: ${shouldReconnect}`);
 
                     if (shouldReconnect) {
-                        this.initialize();
+                        // Si hay un conflicto (440) o error de stream, esperamos 10s para dejar que Render mate la otra instancia
+                        const delay = statusCode === DisconnectReason.connectionReplaced ? 10000 : 5000;
+                        setTimeout(() => this.initialize(), delay);
                     } else {
-                        console.log('🔒 [WhatsApp] Desconectado. Borra la carpeta auth_info_baileys para escanear de nuevo.');
+                        console.log('🔒 [WhatsApp] Sesión cerrada. Borra auth_info_baileys para re-escanear.');
                         this.isConnected = false;
                     }
                 } else if (connection === 'open') {
