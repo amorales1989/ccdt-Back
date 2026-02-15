@@ -1,24 +1,35 @@
 const { supabase } = require('../config/supabase');
+const BirthdayService = require('../services/birthdayService');
 
 const studentsController = {
+  // POST /api/students/check-birthdays
+  checkAndNotifyBirthdays: async (req, res, next) => {
+    try {
+      const result = await BirthdayService.checkDailyBirthdays();
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  },
+
   // GET /api/students
   getAll: async (req, res, next) => {
     try {
-      const { 
-        department_id, 
-        assigned_class, 
-        role, 
+      const {
+        department_id,
+        assigned_class,
+        role,
         departments: userDepartments,
         gender,
-        search 
+        search
       } = req.query;
 
       let query = supabase
         .from('students')
         .select(`
-          *,
-          departments (name)
-        `)
+  *,
+  departments(name)
+    `)
         .is('deleted_at', null); // Excluir estudiantes eliminados
 
       // Filtrar por departamento si se proporciona
@@ -38,7 +49,7 @@ const studentsController = {
 
       // Búsqueda por nombre si se proporciona
       if (search) {
-        query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%`);
+        query = query.or(`first_name.ilike.% ${search}%, last_name.ilike.% ${search}% `);
       }
 
       const { data: baseStudents, error } = await query.order('first_name');
@@ -54,12 +65,12 @@ const studentsController = {
         const { data: authorizedData, error: authError } = await supabase
           .from('student_authorizations')
           .select(`
-            student_id,
-            students!inner (
+student_id,
+  students!inner(
               *,
-              departments (name)
-            )
-          `)
+    departments(name)
+  )
+    `)
           .eq('department_id', department_id)
           .eq('class', assigned_class);
 
@@ -102,9 +113,9 @@ const studentsController = {
       const { data, error } = await supabase
         .from('students')
         .select(`
-          *,
-          departments (name)
-        `)
+    *,
+    departments(name)
+      `)
         .eq('id', id)
         .is('deleted_at', null)
         .single();
@@ -136,24 +147,24 @@ const studentsController = {
   // GET /api/students/birthdays/upcoming
   getUpcomingBirthdays: async (req, res, next) => {
     try {
-      const { 
-        department_id, 
-        assigned_class, 
+      const {
+        department_id,
+        assigned_class,
         departments: userDepartments,
-        limit = 10 
+        limit = 10
       } = req.query;
 
       let query = supabase
         .from('students')
         .select(`
-          id,
-          first_name,
-          last_name,
-          birthdate,
-          department_id,
-          assigned_class,
-          departments (name)
-        `)
+id,
+  first_name,
+  last_name,
+  birthdate,
+  department_id,
+  assigned_class,
+  departments(name)
+    `)
         .not('birthdate', 'is', null)
         .is('deleted_at', null);
 
@@ -181,23 +192,23 @@ const studentsController = {
       const studentsWithBirthdayInfo = data
         .map(student => {
           const [birthYear, birthMonth, birthDay] = student.birthdate.split('-').map(Number);
-          
+
           const isBirthdayToday = birthMonth === currentMonth && birthDay === currentDay;
-          
+
           let daysUntilBirthday;
           if (isBirthdayToday) {
             daysUntilBirthday = 0;
           } else {
             let birthdayDate = new Date(currentYear, birthMonth - 1, birthDay);
-            
+
             if (birthdayDate < today) {
               birthdayDate = new Date(currentYear + 1, birthMonth - 1, birthDay);
             }
-            
+
             const timeDiff = birthdayDate.getTime() - today.getTime();
             daysUntilBirthday = Math.ceil(timeDiff / (1000 * 3600 * 24));
           }
-          
+
           return {
             ...student,
             department: student.departments?.name,
@@ -223,10 +234,10 @@ const studentsController = {
   // GET /api/students/stats
   getStats: async (req, res, next) => {
     try {
-      const { 
-        department_id, 
-        assigned_class, 
-        group_by = 'department' 
+      const {
+        department_id,
+        assigned_class,
+        group_by = 'department'
       } = req.query;
 
       let query = supabase
@@ -267,7 +278,7 @@ const studentsController = {
           if (!departmentStats[deptName]) {
             departmentStats[deptName] = { male: 0, female: 0, total: 0, new: 0 };
           }
-          
+
           if (student.gender === 'masculino') {
             departmentStats[deptName].male++;
           } else if (student.gender === 'femenino') {
@@ -287,7 +298,7 @@ const studentsController = {
           if (!classStats[className]) {
             classStats[className] = { male: 0, female: 0, total: 0, new: 0 };
           }
-          
+
           if (student.gender === 'masculino') {
             classStats[className].male++;
           } else if (student.gender === 'femenino') {
@@ -322,11 +333,11 @@ const studentsController = {
   // POST /api/students
   create: async (req, res, next) => {
     try {
-      const { 
-        first_name, 
-        last_name, 
+      const {
+        first_name,
+        last_name,
         birthdate,
-        gender, 
+        gender,
         department_id,
         department,
         assigned_class,

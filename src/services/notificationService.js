@@ -1,11 +1,12 @@
 const { messaging } = require('../config/firebase');
-const { supabase }= require('../config/supabase');
+const { supabase } = require('../config/supabase');
+const MonitorService = require('./monitorService');
 
 class NotificationService {
-// Enviar a un usuario específico por su ID
+  // Enviar a un usuario específico por su ID
   async enviarAUsuario(usuarioId, notification, data = {}, link = '/') {
     try {
-      
+
       // Obtener tokens activos del usuario
       const { data: rows, error } = await supabase
         .from('usuarios_tokens_fcm')
@@ -99,13 +100,17 @@ class NotificationService {
       };
 
       const response = await messaging.send(message);
-      
+
+      // Monitorización
+      await MonitorService.logNotification(`Topic: ${tema}`, 'success');
+
       return {
         success: true,
         messageId: response
       };
     } catch (error) {
       console.error('Error enviando a tema:', error);
+      await MonitorService.logNotification(`Topic: ${tema}`, 'failure', error.message);
       throw error;
     }
   }
@@ -113,7 +118,7 @@ class NotificationService {
   // Enviar a usuarios por rol
   async enviarPorRol(rol, notification, data = {}, link = '/') {
     try {
-      
+
       // Obtener tokens activos de usuarios con ese rol
       const { data: rows, error } = await supabase
         .from('usuarios_tokens_fcm')
@@ -142,7 +147,7 @@ class NotificationService {
     try {
       const batchSize = 500;
       const batches = [];
-      
+
       for (let i = 0; i < tokens.length; i += batchSize) {
         batches.push(tokens.slice(i, i + batchSize));
       }
@@ -172,7 +177,7 @@ class NotificationService {
         };
 
         const response = await messaging.sendEachForMulticast(message);
-        
+
         results.push(response);
 
         // Manejar tokens inválidos
@@ -204,6 +209,13 @@ class NotificationService {
 
       console.log(`Notificaciones enviadas: ${totalSuccess} exitosas, ${totalFailure} fallidas`);
 
+      // Monitorización
+      if (totalFailure > 0) {
+        await MonitorService.logNotification(data.tipo || 'multiple', 'partial_failure', `Éxito: ${totalSuccess}, Fallo: ${totalFailure}`);
+      } else {
+        await MonitorService.logNotification(data.tipo || 'multiple', 'success', `Total: ${totalSuccess}`);
+      }
+
       return {
         success: true,
         successCount: totalSuccess,
@@ -211,6 +223,7 @@ class NotificationService {
       };
     } catch (error) {
       console.error('Error enviando notificaciones múltiples:', error);
+      await MonitorService.logNotification(data.tipo || 'error_catch', 'failure', error.message);
       throw error;
     }
   }

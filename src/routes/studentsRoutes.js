@@ -36,6 +36,9 @@ router.get('/stats', studentsController.getStats || ((req, res) => res.json({ er
 // GET /api/students/:id - Obtener estudiante por ID
 router.get('/:id', studentsController.getById || ((req, res) => res.json({ error: 'Method not implemented' })));
 
+// POST /api/students/check-birthdays - Verificar notificacions de cumpleaños
+router.post('/check-birthdays', studentsController.checkAndNotifyBirthdays || ((req, res) => res.json({ error: 'Method not implemented' })));
+
 // POST /api/students - Crear nuevo estudiante
 router.post('/', studentsController.create || ((req, res) => res.json({ error: 'Method not implemented' })));
 

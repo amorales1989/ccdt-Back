@@ -8,19 +8,20 @@ if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
-// Crear cliente de Supabase
+// Crear cliente de Supabase (Anon)
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+// Crear cliente de Supabase (Admin) para operaciones que ignoran RLS
+const supabaseAdmin = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_KEY);
 
 // Función para probar la conexión
 const testConnection = async () => {
   try {
     const { data, error } = await supabase
-      .from('event')
+      .from('events') // Corregido 'event' a 'events'
       .select('*')
       .limit(1);
-    
-    
-    
+
     console.log('✅ Conexión con Supabase exitosa');
     return true;
   } catch (error) {
@@ -31,5 +32,6 @@ const testConnection = async () => {
 
 module.exports = {
   supabase,
+  supabaseAdmin,
   testConnection
 };

@@ -7,6 +7,7 @@ require('dotenv').config();
 // Importar configuraciones y middleware
 const { testConnection } = require('./src/config/supabase');
 const { errorHandler, notFound } = require('./src/middleware/errorHandler');
+const authMiddleware = require('./src/middleware/authMiddleware');
 
 // Importar rutas con manejo de errores
 let eventsRoutes, studentsRoutes, departmentsRoutes, authorizationsRoutes, fcmRoutes;
@@ -59,22 +60,22 @@ app.use((req, res, next) => {
     'http://127.0.0.1:3000',
     'http://127.0.0.1:8080'
   ];
-  
+
   const origin = req.headers.origin;
-  
+
   if (allowedOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
-  
+
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
-  
+
   // Manejar preflight
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
   }
-  
+
   next();
 });
 
@@ -102,7 +103,7 @@ app.get('/', (req, res) => {
 
 app.get('/api/health', async (req, res) => {
   const dbStatus = await testConnection();
-  
+
   res.json({
     success: true,
     status: 'OK',
@@ -113,25 +114,25 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
-// API Routes con verificación de tipo
+// API Routes con verificación de tipo y autenticación
 if (eventsRoutes) {
-  app.use('/api/events', eventsRoutes);
+  app.use('/api/events', authMiddleware, eventsRoutes);
 }
 
 if (studentsRoutes) {
-  app.use('/api/students', studentsRoutes);
+  app.use('/api/students', authMiddleware, studentsRoutes);
 }
 
 if (departmentsRoutes) {
-  app.use('/api/departments', departmentsRoutes);
+  app.use('/api/departments', authMiddleware, departmentsRoutes);
 }
 
 if (authorizationsRoutes) {
-  app.use('/api/authorizations', authorizationsRoutes);
+  app.use('/api/authorizations', authMiddleware, authorizationsRoutes);
 }
 
 if (fcmRoutes) {
-  app.use('/api', fcmRoutes);
+  app.use('/api', authMiddleware, fcmRoutes);
 }
 
 // Middleware de manejo de errores (debe ir al final)
@@ -143,7 +144,7 @@ const startServer = async () => {
   try {
     console.log('🔄 Probando conexión con Supabase...');
     await testConnection();
-    
+
     // Iniciar servidor
     app.listen(PORT, () => {
       console.log('🚀 Servidor iniciado exitosamente');
@@ -168,6 +169,14 @@ process.on('uncaughtException', (err) => {
   console.error('❌ Uncaught Exception:', err.message);
   process.exit(1);
 });
+
+// Inicializar Cron Jobs
+const initScheduledJobs = require('./src/jobs/scheduler');
+initScheduledJobs();
+
+// Inicializar WhatsApp Service
+const WhatsAppService = require('./src/services/whatsappService');
+WhatsAppService.initialize();
 
 // Inicializar servidor
 startServer();
