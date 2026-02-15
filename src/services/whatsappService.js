@@ -12,6 +12,10 @@ class WhatsAppService {
         this.authFolder = path.join(__dirname, '../../auth_info_baileys');
         this.instanceId = Math.random().toString(36).substring(7);
         this.conflictCount = 0;
+        this.stableConnectionTimeout = null;
+        this.STABLE_THRESHOLD = 300000; // 5 minutos para considerar conexión estable
+        this.MAX_CONFLICTS_BEFORE_LONG_WAIT = 4;
+        this.MAX_CONFLICTS_BEFORE_STOP = 6;
 
         // Asegurar que existe la carpeta de auth
         if (!fs.existsSync(this.authFolder)) {
@@ -44,6 +48,14 @@ class WhatsAppService {
 
                 if (connection === 'close') {
                     this.isConnecting = false;
+                    this.isConnected = false;
+
+                    // Limpiar timeout de estabilidad si se cierra la conexión antes de tiempo
+                    if (this.stableConnectionTimeout) {
+                        clearTimeout(this.stableConnectionTimeout);
+                        this.stableConnectionTimeout = null;
+                    }
+
                     if (this.isShuttingDown) {
                         console.log(`❌ [WhatsApp][${this.instanceId}] Conexión cerrada por apagado.`);
                         return;
@@ -57,29 +69,48 @@ class WhatsAppService {
                     if (shouldReconnect) {
                         const isConflict = statusCode === DisconnectReason.connectionReplaced;
 
-                        // Jitter: añadir aleatoriedad para evitar sincronización (base 5s)
                         const jitter = Math.floor(Math.random() * 8000);
                         let delay = 5000 + jitter;
 
                         if (isConflict) {
                             this.conflictCount++;
-                            // Backoff: 45s, 90s, 180s... + jitter
-                            delay = (Math.pow(2, this.conflictCount - 1) * 45000) + jitter;
-                            console.warn(`⚠️ [WhatsApp][${this.instanceId}] Conflicto #${this.conflictCount}. Reintentando en ${Math.round(delay / 1000)}s...`);
+
+                            if (this.conflictCount >= this.MAX_CONFLICTS_BEFORE_STOP) {
+                                console.error(`🚨 [WhatsApp][${this.instanceId}] Múltiples conflictos detectados (${this.conflictCount}). DETENIENDO REINTENTOS para evitar bloqueo.`);
+                                return;
+                            }
+
+                            if (this.conflictCount >= this.MAX_CONFLICTS_BEFORE_LONG_WAIT) {
+                                delay = 900000 + jitter; // 15 minutos de espera
+                                console.warn(`🏳️ [WhatsApp][${this.instanceId}] Conflicto persistente (#${this.conflictCount}). Me rindo por ahora. Próximo intento en 15 min...`);
+                            } else {
+                                // Backoff agresivo: 45s, 90s, 180s... + jitter
+                                delay = (Math.pow(2, this.conflictCount - 1) * 45000) + jitter;
+                                console.warn(`⚠️ [WhatsApp][${this.instanceId}] Conflicto #${this.conflictCount}. Reintentando en ${Math.round(delay / 1000)}s...`);
+                            }
                         } else {
-                            this.conflictCount = 0;
+                            // Si el error no es de conflicto, usamos backoff normal sin incrementar conflictCount
+                            delay = 5000 + jitter;
                         }
 
                         setTimeout(() => this.initialize(), delay);
                     } else {
-                        console.log(`🔒 [WhatsApp][${this.instanceId}] Sesión cerrada definitivamente.`);
-                        this.isConnected = false;
+                        console.log(`🔒 [WhatsApp][${this.instanceId}] Sesión cerrada definitivamente o desvinculada.`);
                     }
                 } else if (connection === 'open') {
-                    console.log(`✅ [WhatsApp][${this.instanceId}] Conexión establecida exitosamente`);
+                    console.log(`✅ [WhatsApp][${this.instanceId}] Conexión establecida. Verificando estabilidad...`);
                     this.isConnected = true;
                     this.isConnecting = false;
-                    this.conflictCount = 0;
+
+                    // Estrategia de Estabilidad: Solo reseteamos el contador si la conexión dura > 5 min
+                    if (this.stableConnectionTimeout) clearTimeout(this.stableConnectionTimeout);
+                    this.stableConnectionTimeout = setTimeout(() => {
+                        if (this.isConnected) {
+                            console.log(`💎 [WhatsApp][${this.instanceId}] Conexión estable confirmada. Reseteando contadores.`);
+                            this.conflictCount = 0;
+                        }
+                        this.stableConnectionTimeout = null;
+                    }, this.STABLE_THRESHOLD);
                 }
             });
 
