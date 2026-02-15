@@ -84,8 +84,9 @@ class WhatsAppService {
                                 delay = 900000 + jitter; // 15 minutos de espera
                                 console.warn(`🏳️ [WhatsApp][${this.instanceId}] Conflicto persistente (#${this.conflictCount}). Me rindo por ahora. Próximo intento en 15 min...`);
                             } else {
-                                // Backoff agresivo: 45s, 90s, 180s... + jitter
-                                delay = (Math.pow(2, this.conflictCount - 1) * 45000) + jitter;
+                                // Backoff agresivo: 90s, 180s, 360s... + jitter
+                                // Aumentamos la base a 90s para asegurar que la instancia vieja muera en Render
+                                delay = (Math.pow(2, this.conflictCount - 1) * 90000) + jitter;
                                 console.warn(`⚠️ [WhatsApp][${this.instanceId}] Conflicto #${this.conflictCount}. Reintentando en ${Math.round(delay / 1000)}s...`);
                             }
                         } else {
@@ -93,7 +94,13 @@ class WhatsAppService {
                             delay = 5000 + jitter;
                         }
 
-                        setTimeout(() => this.initialize(), delay);
+                        setTimeout(() => {
+                            if (!this.isShuttingDown) {
+                                this.initialize();
+                            } else {
+                                console.log(`🛑 [WhatsApp][${this.instanceId}] Ignorando reintento programado por apagado.`);
+                            }
+                        }, delay);
                     } else {
                         console.log(`🔒 [WhatsApp][${this.instanceId}] Sesión cerrada definitivamente o desvinculada.`);
                     }
@@ -114,7 +121,15 @@ class WhatsAppService {
                 }
             });
 
-            this.sock.ev.on('creds.update', saveCreds);
+            this.sock.ev.on('creds.update', (creds) => {
+                if (!this.isShuttingDown) {
+                    saveCreds(creds);
+                } else {
+                    // Evitamos escribir en el disco si la instancia se está apagando
+                    // Esto previene errores de "Bad MAC" en la nueva instancia
+                    console.log(`🛡️ [WhatsApp][${this.instanceId}] Bloqueando escritura de credenciales durante apagado (Protección de Integridad).`);
+                }
+            });
 
         } catch (error) {
             console.error(`❌ [WhatsApp][${this.instanceId}] Error al inicializar:`, error);
