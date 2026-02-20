@@ -66,11 +66,11 @@ class BirthdayService {
 
                 console.log(`📍 [BirthdayService] Procesando departamento ${deptName} (${deptId}): ${studentNames}`);
 
-                // Buscar líderes (incluyendo teléfono)
+                // Buscar líderes y maestros (incluyendo teléfono)
                 const { data: leaders, error: leaderError } = await supabase
                     .from('profiles')
-                    .select('id, first_name, last_name, email, phone')
-                    .eq('role', 'lider')
+                    .select('id, first_name, last_name, email, phone, role')
+                    .in('role', ['lider', 'maestro'])
                     .eq('department_id', deptId);
 
                 if (leaderError) {

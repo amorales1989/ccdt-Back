@@ -41,6 +41,13 @@ try {
   console.error('❌ Error loading fcm routes:', error.message);
 }
 
+let webhookRoutes;
+try {
+  webhookRoutes = require('./src/routes/webhookRoutes');
+} catch (error) {
+  console.error('❌ Error loading webhook routes:', error.message);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -131,9 +138,15 @@ if (authorizationsRoutes) {
   app.use('/api/authorizations', authMiddleware, authorizationsRoutes);
 }
 
+// Webhooks (deben ir antes de las rutas protegidas para evitar interceptación)
+if (webhookRoutes) {
+  app.use('/api/webhooks', webhookRoutes);
+}
+
 if (fcmRoutes) {
   app.use('/api', authMiddleware, fcmRoutes);
 }
+
 
 // Middleware de manejo de errores (debe ir al final)
 app.use(notFound);
