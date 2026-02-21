@@ -103,6 +103,41 @@ const webhookController = {
             console.error('❌ Error en handleEventWebhook:', error.message);
             next(error);
         }
+    },
+
+    handleCronHealthCheck: async (req, res, next) => {
+        try {
+            const authHeader = req.headers.authorization;
+            const cronSecret = process.env.CRON_SECRET;
+
+            // En Vercel, CRON_SECRET se pasa como 'Bearer <token>'
+            if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+                console.warn('⚠️ Intento de acceso no autorizado al Cron Health Check');
+                return res.status(401).json({ success: false, message: 'No autorizado' });
+            }
+
+            console.log('⏰ Ejecutando Health Check desde Vercel Cron...');
+
+            const monitorNumber = process.env.MONITOR_WHATSAPP_NUMBER;
+            if (!monitorNumber) {
+                return res.status(500).json({ success: false, message: 'MONITOR_WHATSAPP_NUMBER no configurado' });
+            }
+
+            const message = `✅ *CCDT Bot - Vercel Health Check*\n\nInformo que el sistema de WhatsApp está recibiendo las llamadas de Vercel Cron correctamente.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR')}\n⏰ Hora Actual: ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}\n\n_Seguimos en línea._ ⚡`;
+
+            const sent = await WhatsAppService.sendMessage(monitorNumber, message, true);
+
+            if (sent) {
+                console.log('✅ Health Check enviado exitosamente');
+                return res.json({ success: true, message: 'Health Check enviado' });
+            } else {
+                console.error('❌ Falló el envío del Health Check');
+                return res.status(503).json({ success: false, message: 'Servicio de WhatsApp no disponible' });
+            }
+        } catch (error) {
+            console.error('❌ Error en handleCronHealthCheck:', error.message);
+            next(error);
+        }
     }
 };
 
