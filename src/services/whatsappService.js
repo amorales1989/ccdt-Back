@@ -1,4 +1,5 @@
 const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { supabaseAdmin } = require('../config/supabase');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
 const fs = require('fs');
@@ -30,7 +31,53 @@ class WhatsAppService {
         try {
             console.log(`🔄 [WhatsApp][${this.instanceId}] Inicializando servicio...`);
 
+            // 1. Restaurar sesión desde la base de datos si existe
+            await this.readFromDatabase();
+
             const { state, saveCreds } = await useMultiFileAuthState(this.authFolder);
+
+            // 2. Interceptar guardado de credenciales globales
+            const originalSaveCreds = saveCreds;
+            const patchedSaveCreds = async () => {
+                if (this.isShuttingDown) {
+                    // Evitamos escribir en el disco si la instancia se está apagando
+                    // Esto previene errores de "Bad MAC" en la nueva instancia
+                    console.log(`🛡️ [WhatsApp][${this.instanceId}] Bloqueando escritura de credenciales durante apagado (Protección de Integridad).`);
+                    return;
+                }
+                await originalSaveCreds();
+                try {
+                    const credsPath = path.join(this.authFolder, 'creds.json');
+                    if (fs.existsSync(credsPath)) {
+                        const content = JSON.parse(fs.readFileSync(credsPath, 'utf-8'));
+                        await this.saveToDatabase('creds.json', content);
+                    }
+                } catch (err) {
+                    console.error('❌ Error sincronizando creds.json:', err.message);
+                }
+            };
+
+            // 3. Interceptar guardado de llaves individuales (pre-keys, sessions, etc)
+            const originalSet = state.keys.set;
+            state.keys.set = async (data) => {
+                await originalSet(data);
+                if (this.isShuttingDown) return; // No sincronizar a DB si se está apagando
+                try {
+                    for (const category in data) {
+                        for (const id in data[category]) {
+                            const value = data[category][id];
+                            const fileId = `${category}-${id.replace(/\//g, '_')}.json`;
+                            if (value) {
+                                await this.saveToDatabase(fileId, value);
+                            } else {
+                                // Opcional: manejar borrados en DB si es necesario
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.error('❌ Error sincronizando llaves a DB:', err.message);
+                }
+            };
 
             this.sock = makeWASocket({
                 auth: state,
@@ -183,6 +230,56 @@ class WhatsAppService {
                 await MonitorService.logWhatsApp(phoneNumber, 'failure', error.message);
             }
             return false;
+        }
+    }
+
+    /**
+     * Descarga todos los archivos de sesión desde Supabase al disco local
+     */
+    async readFromDatabase() {
+        console.log(`📥 [WhatsApp][${this.instanceId}] Restaurando sesión desde Supabase...`);
+        try {
+            const { data, error } = await supabaseAdmin
+                .from('whatsapp_sessions')
+                .select('*');
+
+            if (error) throw error;
+
+            if (data && data.length > 0) {
+                if (!fs.existsSync(this.authFolder)) {
+                    fs.mkdirSync(this.authFolder, { recursive: true });
+                }
+
+                for (const item of data) {
+                    const filePath = path.join(this.authFolder, item.file_id);
+                    // Baileys espera que el contenido sea un JSON válido para sus archivos de estado
+                    fs.writeFileSync(filePath, JSON.stringify(item.content));
+                }
+                console.log(`✅ [WhatsApp][${this.instanceId}] Restaurados ${data.length} archivos de sesión.`);
+            } else {
+                console.log(`ℹ️ [WhatsApp][${this.instanceId}] No se encontró sesión previa en la nube.`);
+            }
+        } catch (err) {
+            console.error(`❌ [WhatsApp][${this.instanceId}] Error crítico al restaurar desde DB:`, err.message);
+        }
+    }
+
+    /**
+     * Sube un archivo de sesión a Supabase
+     */
+    async saveToDatabase(fileId, content) {
+        if (this.isShuttingDown) return;
+        try {
+            const { error } = await supabaseAdmin
+                .from('whatsapp_sessions')
+                .upsert({
+                    file_id: fileId,
+                    content: content,
+                    updated_at: new Date().toISOString()
+                });
+            if (error) throw error;
+        } catch (err) {
+            console.error(`❌ [WhatsApp][${this.instanceId}] Error enviando ${fileId} a la nube:`, err.message);
         }
     }
 }
