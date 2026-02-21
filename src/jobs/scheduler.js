@@ -23,7 +23,7 @@ const initScheduledJobs = () => {
     console.log('📅 Tarea programada: Verificación de cumpleaños diaria a las 09:00 AM');
 
     // Health Check diario para verificar conexión (9:00 AM)
-    cron.schedule('58 21 * * *', async () => {
+    cron.schedule('0 9 * * *', async () => {
         console.log('⏰ [Cron Job] Ejecutando Health Check diario (9:00 AM)...');
         try {
             const monitorNumber = process.env.MONITOR_WHATSAPP_NUMBER;
