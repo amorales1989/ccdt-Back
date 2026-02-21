@@ -294,16 +294,21 @@ const eventsController = {
 
       // ⚠️ CAMBIO IT: La llamada a n8n no debe bloquear el flujo
       try {
-        axios.post(
-          'https://n8n-n8n.3htcbh.easypanel.host/webhook/calendarioccdt',
-          n8nPayload
-        ).then(() => {
-          MonitorService.logEmail(adminEmails, `Solicitud: ${eventTitle}`, 'success', 'Webhook n8n enviado');
-        })
-          .catch(err => {
-            console.error('[CCDT] n8n Error:', err.message);
-            MonitorService.logEmail(adminEmails, `Solicitud: ${eventTitle}`, 'failure', `Error Webhook n8n: ${err.message}`);
-          });
+        if (process.env.PERMITE_MAIL === 'true') {
+          axios.post(
+            'https://n8n-n8n.3htcbh.easypanel.host/webhook/calendarioccdt',
+            n8nPayload
+          ).then(() => {
+            MonitorService.logEmail(adminEmails, `Solicitud: ${eventTitle}`, 'success', 'Webhook n8n enviado');
+          })
+            .catch(err => {
+              console.error('[CCDT] n8n Error:', err.message);
+              MonitorService.logEmail(adminEmails, `Solicitud: ${eventTitle}`, 'failure', `Error Webhook n8n: ${err.message}`);
+            });
+        } else {
+          console.log(`🚫 [Email] Webhook bloqueado por feature flag (PERMITE_MAIL=${process.env.PERMITE_MAIL})`);
+          MonitorService.logEmail(adminEmails, `Solicitud: ${eventTitle}`, 'success', 'Simulado (PERMITE_MAIL=false)');
+        }
 
       } catch (n8nError) {
         console.error('⚠️ Error sincrono n8n:', n8nError.message);
@@ -435,16 +440,21 @@ const eventsController = {
 
       // ⚠️ CAMBIO IT: No bloquear por n8n
       try {
-        axios.post(
-          'https://n8n-n8n.3htcbh.easypanel.host/webhook/respuestaccdt',
-          n8nPayload
-        ).then(() => {
-          MonitorService.logEmail(requesterEmail, `Respuesta: ${eventTitle}`, 'success', 'Webhook n8n enviado');
-        })
-          .catch(err => {
-            console.error('[CCDT] n8n Response Error:', err.message);
-            MonitorService.logEmail(requesterEmail, `Respuesta: ${eventTitle}`, 'failure', `Error Webhook n8n: ${err.message}`);
-          });
+        if (process.env.PERMITE_MAIL === 'true') {
+          axios.post(
+            'https://n8n-n8n.3htcbh.easypanel.host/webhook/respuestaccdt',
+            n8nPayload
+          ).then(() => {
+            MonitorService.logEmail(requesterEmail, `Respuesta: ${eventTitle}`, 'success', 'Webhook n8n enviado');
+          })
+            .catch(err => {
+              console.error('[CCDT] n8n Response Error:', err.message);
+              MonitorService.logEmail(requesterEmail, `Respuesta: ${eventTitle}`, 'failure', `Error Webhook n8n: ${err.message}`);
+            });
+        } else {
+          console.log(`🚫 [Email] Webhook respuesta bloqueado por feature flag (PERMITE_MAIL=${process.env.PERMITE_MAIL})`);
+          MonitorService.logEmail(requesterEmail, `Respuesta: ${eventTitle}`, 'success', 'Simulado (PERMITE_MAIL=false)');
+        }
 
       } catch (n8nError) {
         console.error('[CCDT] n8n Sync Error:', n8nError.message);

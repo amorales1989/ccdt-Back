@@ -151,6 +151,12 @@ class WhatsAppService {
     }
 
     async sendMessage(phoneNumber, text, skipMonitor = false) {
+        // Feature Flag: Permitir WhatsApp
+        if (process.env.PERMITE_WHATSAPP !== 'true') {
+            console.log(`🚫 [WhatsApp] Envío bloqueado por feature flag (PERMITE_WHATSAPP=${process.env.PERMITE_WHATSAPP})`);
+            return true; // Retornamos true para no disparar reintentos innecesarios
+        }
+
         if (!this.isConnected || !this.sock) {
             if (!skipMonitor) {
                 const MonitorService = require('./monitorService');
