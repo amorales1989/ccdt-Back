@@ -5,8 +5,31 @@ const WhatsAppService = require('../services/whatsappService');
 const initScheduledJobs = () => {
     console.log('⏰ Inicializando Cron Jobs...');
 
+    // Health Check Cada 1 Minuto (Pedido por usuario)
+    cron.schedule('* * * * *', async () => {
+        const monitorNumber = process.env.MONITOR_WHATSAPP_NUMBER;
+        if (!monitorNumber) return;
+
+        try {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+
+            // Enviamos con la empresa 1 por defecto
+            await WhatsAppService.sendMessage(1, monitorNumber,
+                `🤖 *Monitoreo Activo*\n\nEstado: Línea ✅\nHora: ${timeStr}\n\n_CCDT Bot_`
+            );
+            console.log(`⏱️ [Cron Job] Monitoreo enviado a ${monitorNumber}`);
+        } catch (error) {
+            console.error('❌ [Cron Job] Error en monitoreo 1m:', error.message);
+        }
+    }, {
+        scheduled: true,
+        timezone: "America/Argentina/Buenos_Aires"
+    });
+
+    console.log('📅 Tarea programada: Monitoreo automático cada 1 minuto');
+
     // Programar tarea para las 9:00 AM todos los días
-    // Formato: segundo (opcional), minuto, hora, dia del mes, mes, dia de la semana
     cron.schedule('0 9 * * *', async () => {
         console.log('⏰ [Cron Job] Ejecutando verificación diaria de cumpleaños (9:00 AM)...');
         try {
@@ -17,45 +40,24 @@ const initScheduledJobs = () => {
         }
     }, {
         scheduled: true,
-        timezone: "America/Argentina/Buenos_Aires" // Ajusta según tu zona horaria si es necesario
+        timezone: "America/Argentina/Buenos_Aires"
     });
 
     console.log('📅 Tarea programada: Verificación de cumpleaños diaria a las 09:00 AM');
 
-    // Health Check diario para verificar conexión (9:00 AM)
+    // Health Check detallado (9:00 AM)
     cron.schedule('0 9 * * *', async () => {
-        console.log('⏰ [Cron Job] Ejecutando Health Check diario (9:00 AM)...');
+        const monitorNumber = process.env.MONITOR_WHATSAPP_NUMBER;
+        if (!monitorNumber) return;
+
+        console.log('⏰ [Cron Job] Ejecutando Health Check detallado (9:00 AM)...');
         try {
-            const monitorNumber = process.env.MONITOR_WHATSAPP_NUMBER;
-            if (!monitorNumber) return;
-
-            // Intentar enviar con un pequeño reintento si no está conectado aún (el servicio puede estar reconectando)
-            let sent = false;
-            let attempts = 0;
-            const maxAttempts = 3;
-
-            while (!sent && attempts < maxAttempts) {
-                sent = await WhatsAppService.sendMessage(monitorNumber,
-                    `✅ *CCDT Bot - servidor en linea*\n\nInformo que el sistema de WhatsApp está vinculado y funcionando correctamente.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR')}\n⏰ Hora Actual: ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}\n\n_Seguimos en línea._ ⚡`,
-                    true
-                );
-
-                if (!sent) {
-                    attempts++;
-                    if (attempts < maxAttempts) {
-                        console.log(`⚠️ [Cron Job] Health Check fallido (intento ${attempts}). Reintentando en 30s...`);
-                        await new Promise(resolve => setTimeout(resolve, 30000));
-                    }
-                }
-            }
-
-            if (sent) {
-                console.log('✅ [Cron Job] Health Check enviado exitosamente a:', monitorNumber);
-            } else {
-                console.error('❌ [Cron Job] Health Check fallido tras todos los intentos. El servicio parece estar desconectado.');
-            }
+            await WhatsAppService.sendMessage(1, monitorNumber,
+                `✅ *CCDT Bot - Reporte Matutino*\n\nEl sistema de WhatsApp está vinculado y operativo.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR')}\n⏰ Hora: ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}\n\n_Buen día._ ☀️`
+            );
+            console.log('✅ [Cron Job] Health Check matutino enviado.');
         } catch (error) {
-            console.error('❌ [Cron Job] Error crítico en Health Check:', error);
+            console.error('❌ [Cron Job] Error en Health Check matutino:', error.message);
         }
     }, {
         scheduled: true,
@@ -64,45 +66,26 @@ const initScheduledJobs = () => {
 
     console.log('📅 Tarea programada: Health Check diario a las 09:00 AM');
 
-    // Health Check diario para verificar conexión (23:00)
+    // Health Check detallado (23:00)
     cron.schedule('0 23 * * *', async () => {
-        console.log('⏰ [Cron Job] Ejecutando Health Check diario (23:00)...');
+        const monitorNumber = process.env.MONITOR_WHATSAPP_NUMBER;
+        if (!monitorNumber) return;
+
+        console.log('⏰ [Cron Job] Ejecutando Health Check nocturno (23:00)...');
         try {
-            const monitorNumber = process.env.MONITOR_WHATSAPP_NUMBER;
-            if (!monitorNumber) return;
-
-            // Intentar enviar con un pequeño reintento si no está conectado aún (el servicio puede estar reconectando)
-            let sent = false;
-            let attempts = 0;
-            const maxAttempts = 3;
-
-            while (!sent && attempts < maxAttempts) {
-                sent = await WhatsAppService.sendMessage(monitorNumber,
-                    `✅ *CCDT Bot - servidor en linea*\n\nInformo que el sistema de WhatsApp está vinculado y funcionando correctamente.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR')}\n⏰ Hora Actual: ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}\n\n_Seguimos en línea._ ⚡`,
-                    true
-                );
-
-                if (!sent) {
-                    attempts++;
-                    if (attempts < maxAttempts) {
-                        console.log(`⚠️ [Cron Job] Health Check fallido (intento ${attempts}). Reintentando en 30s...`);
-                        await new Promise(resolve => setTimeout(resolve, 30000));
-                    }
-                }
-            }
-
-            if (sent) {
-                console.log('✅ [Cron Job] Health Check enviado exitosamente a:', monitorNumber);
-            } else {
-                console.error('❌ [Cron Job] Health Check fallido tras todos los intentos. El servicio parece estar desconectado.');
-            }
+            await WhatsAppService.sendMessage(1, monitorNumber,
+                `🌙 *CCDT Bot - Reporte Final*\n\nEl sistema cierra el día operativo y conectado.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR')}\n⏰ Hora: ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}\n\n_Hasta mañana._ 💤`
+            );
+            console.log('✅ [Cron Job] Health Check nocturno enviado.');
         } catch (error) {
-            console.error('❌ [Cron Job] Error crítico en Health Check:', error);
+            console.error('❌ [Cron Job] Error en Health Check nocturno:', error.message);
         }
     }, {
         scheduled: true,
         timezone: "America/Argentina/Buenos_Aires"
     });
+
+    console.log('📅 Tarea programada: Health Check diario a las 23:00 PM');
 
 };
 

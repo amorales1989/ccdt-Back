@@ -10,7 +10,7 @@ const { errorHandler, notFound } = require('./src/middleware/errorHandler');
 const authMiddleware = require('./src/middleware/authMiddleware');
 
 // Importar rutas con manejo de errores
-let eventsRoutes, studentsRoutes, departmentsRoutes, authorizationsRoutes, fcmRoutes;
+let eventsRoutes, studentsRoutes, departmentsRoutes, authorizationsRoutes, fcmRoutes, whatsappRoutes;
 try {
   eventsRoutes = require('./src/routes/eventsRoutes');
 } catch (error) {
@@ -41,6 +41,12 @@ try {
   console.error('❌ Error loading fcm routes:', error.message);
 }
 
+try {
+  whatsappRoutes = require('./src/routes/whatsappRoutes');
+} catch (error) {
+  console.error('❌ Error loading whatsapp routes:', error.message);
+}
+
 let webhookRoutes;
 try {
   webhookRoutes = require('./src/routes/webhookRoutes');
@@ -60,18 +66,16 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // Manejo manual de CORS - más control
 app.use((req, res, next) => {
-  const allowedOrigins = [
-    'https://ccdt.vercel.app',
-    'http://localhost:3000',
-    'http://localhost:8080',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:8080'
-  ];
-
   const origin = req.headers.origin;
 
-  if (allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
+  // En desarrollo, ser más permisivos
+  if (process.env.NODE_ENV !== 'production' || origin?.includes('localhost') || origin?.includes('127.0.0.1')) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  } else {
+    const allowedOrigins = ['https://ccdt.vercel.app'];
+    if (allowedOrigins.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+    }
   }
 
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
@@ -141,6 +145,10 @@ if (authorizationsRoutes) {
 // Webhooks (deben ir antes de las rutas protegidas para evitar interceptación)
 if (webhookRoutes) {
   app.use('/api/webhooks', webhookRoutes);
+}
+
+if (whatsappRoutes) {
+  app.use('/api/whatsapp', authMiddleware, whatsappRoutes);
 }
 
 if (fcmRoutes) {
