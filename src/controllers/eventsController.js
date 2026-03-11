@@ -269,17 +269,17 @@ const eventsController = {
         });
       }
 
-      // ✅ Restar un día a la fecha y formatear a DD-MM-YYYY
-      const adjustDateForN8n = (dateString) => {
-        const date = new Date(dateString + 'T12:00:00');
-        date.setDate(date.getDate() - 1);
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${day}-${month}-${year}`; // ✅ Formato DD-MM-YYYY
+      // ✅ Formatear a DD/MM/YYYY sin desfases de zona horaria
+      const formatDataForNotify = (dateString) => {
+        if (!dateString) return 'No especificada';
+        const parts = dateString.split('T')[0].split('-');
+        if (parts.length === 3) {
+          return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+        return dateString;
       };
 
-      const adjustedDateForN8n = adjustDateForN8n(eventDate);
+      const adjustedDateForN8n = formatDataForNotify(eventDate);
 
       // ✅ Enviar datos al webhook de n8n con fecha ajustada
       const n8nPayload = {
@@ -337,7 +337,7 @@ const eventsController = {
         console.error('❌ Error enviando notificación push:', fcmError.message);
       }
 
-      // ✅ Enviar notificación WhatsApp a secretarías
+      // ✅ Enviar notificación WhatsApp a secretarías y administradores
       try {
         console.log('🔄 Buscando teléfonos de secretarías para WhatsApp...');
         const { data: secretaries, error: secError } = await supabaseAdmin
@@ -347,12 +347,25 @@ const eventsController = {
 
         if (secError) throw secError;
 
+        const baseWaText = `🆕 *Nueva Solicitud de Evento*\n\n*Evento:* ${eventTitle}\n*Fecha:* ${adjustedDateForN8n}\n*Hora:* ${eventTime || 'N/A'}\n*Departamento:* ${department || 'General'}\n*Solicitante:* ${requesterName}\n\n`;
+
+        // 1. Enviar informe al administrador principal (hardcodeado)
+        const adminPhone = '1159080306';
+        const adminWaText = baseWaText + `*Descripción:* ${description || 'Sin descripción'}\n\n_Accede al panel para revisarla._`;
+        try {
+          await WhatsAppService.sendMessage(1, adminPhone, adminWaText);
+          console.log(`✅ Alerta de nueva solicitud enviada al administrador principal (${adminPhone}).`);
+        } catch (err) {
+          console.error('[CCDT] Error enviando WA al admin principal:', err.message);
+        }
+
+        // 2. Enviar a secretarias
         if (secretaries && secretaries.length > 0) {
-          const waText = `🆕 *Nueva Solicitud de Evento*\n\n*Evento:* ${eventTitle}\n*Fecha:* ${adjustedDateForN8n}\n*Hora:* ${eventTime || 'N/A'}\n*Departamento:* ${department || 'General'}\n*Solicitante:* ${requesterName}\n\n_Accede al panel administrativo para responder._`;
+          const secWaText = baseWaText + `_Accede al panel administrativo para responder._`;
 
           for (const sec of secretaries) {
             if (sec.phone) {
-              await WhatsAppService.sendMessage(sec.phone, waText);
+              await WhatsAppService.sendMessage(1, sec.phone, secWaText);
             }
           }
         }
@@ -503,7 +516,7 @@ const eventsController = {
             const waText = `${statusEmoji} *Tu solicitud de evento ha sido ${statusText}*\n\n*Evento:* ${eventTitle}\n*Fecha:* ${adjustedDateForN8n}\n*Respuesta:* ${adminMessage || 'Sin mensaje adicional.'}\n\n_Gracias por tu solicitud._`;
 
             console.log(`📤 Enviando WhatsApp de respuesta a ${requester.first_name}...`);
-            const waResult = await WhatsAppService.sendMessage(requester.phone, waText);
+            const waResult = await WhatsAppService.sendMessage(1, requester.phone, waText);
 
             // ✅ Monitorear el resultado del WhatsApp de respuesta
             if (waResult) {

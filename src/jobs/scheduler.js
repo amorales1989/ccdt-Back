@@ -63,6 +63,115 @@ const initScheduledJobs = () => {
 
     console.log('📅 Tarea programada: Reporte nocturno a las 21:00 PM');
 
+    // Alerta Diaria (9:00 AM) - Solicitudes de Eventos Pendientes
+    cron.schedule('0 9 * * *', async () => {
+        const adminPhone = '1159080306'; // Número a notificar
+        console.log('⏰ [Cron Job] Ejecutando Verificación de Solicitudes Pendientes (9:00 AM)...');
+
+        try {
+            // Importar supabase aquí si no está en el ámbito
+            const { supabaseAdmin } = require('../config/supabase');
+
+            // 1. Traemos las solicitudes pendientes
+            const { data: pendingRequests, error } = await supabaseAdmin
+                .from('events')
+                .select('*')
+                .eq('solicitud', true)
+                .in('estado', ['solicitud', 'pendiente', null]);
+
+            if (error) throw error;
+
+            if (pendingRequests && pendingRequests.length > 0) {
+                // 2. Obtener los IDs de solicitantes únicos para buscar sus nombres
+                const requesterIds = [...new Set(pendingRequests.map(r => r.solicitante).filter(id => id))];
+
+                let profilesMap = {};
+                if (requesterIds.length > 0) {
+                    const { data: profiles } = await supabaseAdmin
+                        .from('profiles')
+                        .select('id, first_name, last_name')
+                        .in('id', requesterIds);
+
+                    if (profiles) {
+                        profiles.forEach(p => {
+                            profilesMap[p.id] = `${p.first_name || ''} ${p.last_name || ''}`.trim();
+                        });
+                    }
+                }
+
+                // 3. Obtener teléfonos de secretarios de calendario
+                const { data: secretaries } = await supabaseAdmin
+                    .from('profiles')
+                    .select('phone')
+                    .eq('role', 'secr.-calendario')
+                    .not('phone', 'is', null);
+
+                const recipients = new Set([adminPhone]);
+                if (secretaries) {
+                    secretaries.forEach(s => {
+                        if (s.phone && s.phone.trim()) {
+                            // Limpiar espacio y asegurar que sea string
+                            recipients.add(s.phone.trim());
+                        }
+                    });
+                }
+
+                let message = `📋 *RECORDATORIO: ${pendingRequests.length} Solicitud(es) Pendiente(s)*\n\n`;
+
+                pendingRequests.forEach((req, index) => {
+                    const reqDate = new Date(req.created_at || req.date);
+                    const today = new Date();
+
+                    // Aseguramos cálculo ignorando la hora
+                    const utc1 = Date.UTC(reqDate.getFullYear(), reqDate.getMonth(), reqDate.getDate());
+                    const utc2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+
+                    const diffMs = utc2 - utc1;
+                    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+                    const dayString = diffDays === 1 ? '1 día' : `${diffDays} días`;
+
+                    // Formateo de fecha seguro (YYYY-MM-DD -> DD/MM/YYYY) sin desfases
+                    let dateFormatted = 'No especificada';
+                    if (req.date) {
+                        const parts = req.date.split('T')[0].split('-');
+                        if (parts.length === 3) {
+                            dateFormatted = `${parts[2]}/${parts[1]}/${parts[0]}`;
+                        }
+                    }
+
+                    const solicitanteName = profilesMap[req.solicitante] || (req.solicitante || 'No especificado');
+
+                    message += `*${index + 1}. ${req.title}*\n`;
+                    message += `👤 Solicitante: ${solicitanteName}\n`;
+                    message += `📅 Para el: ${dateFormatted}\n`;
+                    message += `⏳ *Lleva ${dayString} pendiente*\n\n`;
+                });
+
+                message += `_Por favor, ingresa al panel de control para revisarlas._`;
+
+                // Enviar a todos los destinatarios
+                for (const phone of recipients) {
+                    try {
+                        await WhatsAppService.sendMessage(1, phone, message);
+                        console.log(`✅ [Cron Job] Alerta enviada a ${phone}.`);
+                    } catch (sendError) {
+                        console.error(`❌ [Cron Job] Error enviando a ${phone}:`, sendError.message);
+                    }
+                }
+            } else {
+                console.log('✅ [Cron Job] No hay solicitudes pendientes para notificar.');
+            }
+        } catch (error) {
+            console.error('❌ [Cron Job] Error en alertas de solicitudes:', error.message);
+        }
+    }, {
+        scheduled: true,
+        timezone: "America/Argentina/Buenos_Aires"
+    });
+
+    console.log('📅 Tarea programada: Alerta de solicitudes pendientes a las 09:00 AM');
+
 };
 
 module.exports = initScheduledJobs;
