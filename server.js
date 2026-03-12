@@ -10,7 +10,7 @@ const { errorHandler, notFound } = require('./src/middleware/errorHandler');
 const authMiddleware = require('./src/middleware/authMiddleware');
 
 // Importar rutas con manejo de errores
-let eventsRoutes, studentsRoutes, departmentsRoutes, authorizationsRoutes, fcmRoutes, whatsappRoutes;
+let eventsRoutes, studentsRoutes, departmentsRoutes, authorizationsRoutes, fcmRoutes, whatsappRoutes, observationsRoutes;
 try {
   eventsRoutes = require('./src/routes/eventsRoutes');
 } catch (error) {
@@ -45,6 +45,12 @@ try {
   whatsappRoutes = require('./src/routes/whatsappRoutes');
 } catch (error) {
   console.error('❌ Error loading whatsapp routes:', error.message);
+}
+
+try {
+  observationsRoutes = require('./src/routes/observationsRoutes');
+} catch (error) {
+  console.error('❌ Error loading observations routes:', error.message);
 }
 
 let webhookRoutes;
@@ -107,7 +113,8 @@ app.get('/', (req, res) => {
       ...(studentsRoutes && { students: '/api/students' }),
       ...(departmentsRoutes && { departments: '/api/departments' }),
       ...(authorizationsRoutes && { authorizations: '/api/authorizations' }),
-      ...(fcmRoutes && { fcm: '/api/tokens, /api/fcm/temas' })
+      ...(fcmRoutes && { fcm: '/api/tokens, /api/fcm/temas' }),
+      ...(observationsRoutes && { observations: '/api/observations' })
     }
   });
 });
@@ -149,6 +156,10 @@ if (webhookRoutes) {
 
 if (whatsappRoutes) {
   app.use('/api/whatsapp', authMiddleware, whatsappRoutes);
+}
+
+if (observationsRoutes) {
+  app.use('/api/observations', authMiddleware, observationsRoutes);
 }
 
 if (fcmRoutes) {
