@@ -5,9 +5,9 @@ const WhatsAppService = require('../services/whatsappService');
 const initScheduledJobs = () => {
     console.log('⏰ Inicializando Cron Jobs...');
 
-    // Programar tarea para las 9:00 AM todos los días (Cumpleaños)
-    cron.schedule('0 9 * * *', async () => {
-        console.log('⏰ [Cron Job] Ejecutando verificación diaria de cumpleaños (9:00 AM)...');
+    // Programar tarea para las 8:00 AM todos los días (Cumpleaños)
+    cron.schedule('0 8 * * *', async () => {
+        console.log('⏰ [Cron Job] Ejecutando verificación diaria de cumpleaños (8:00 AM)...');
         try {
             const result = await BirthdayService.checkDailyBirthdays();
             console.log('✅ [Cron Job] Finalizado:', result);
@@ -19,7 +19,7 @@ const initScheduledJobs = () => {
         timezone: "America/Argentina/Buenos_Aires"
     });
 
-    console.log('📅 Tarea programada: Verificación de cumpleaños diaria a las 09:00 AM');
+    console.log('📅 Tarea programada: Verificación de cumpleaños diaria a las 08:00 AM');
 
     // Reporte Matutino / Monitoreo (9:00 AM)
     cron.schedule('0 9 * * *', async () => {
