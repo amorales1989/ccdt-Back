@@ -95,10 +95,35 @@ student_id,
         is_deleted: false
       }));
 
+      // Calcular conteos de inscripciones activas para perfiles vinculados
+      const profileIds = studentsWithDepartment
+        .filter(s => s.profile_id)
+        .map(s => s.profile_id);
+
+      let enrollmentCounts = {};
+      if (profileIds.length > 0) {
+        const { data: counts, error: countError } = await supabase
+          .from('students')
+          .select('profile_id')
+          .in('profile_id', profileIds)
+          .is('deleted_at', null);
+
+        if (!countError && counts) {
+          counts.forEach(c => {
+            enrollmentCounts[c.profile_id] = (enrollmentCounts[c.profile_id] || 0) + 1;
+          });
+        }
+      }
+
+      const finalStudents = studentsWithDepartment.map(student => ({
+        ...student,
+        active_enrollments_count: student.profile_id ? (enrollmentCounts[student.profile_id] || 0) : 0
+      }));
+
       res.json({
         success: true,
-        data: studentsWithDepartment,
-        count: studentsWithDepartment.length
+        data: finalStudents,
+        count: finalStudents.length
       });
     } catch (error) {
       next(error);
@@ -344,7 +369,9 @@ id,
         phone,
         address,
         document_number,
-        nuevo
+        nuevo,
+        profile_id,
+        person_source
       } = req.body;
 
       // Validaciones básicas
@@ -354,8 +381,8 @@ id,
         throw validationError;
       }
 
-      // Validar DNI duplicado si se proporciona
-      if (document_number && document_number.trim() !== '') {
+      // Validar DNI duplicado SOLO si NO se proporciona profile_id ni person_source (es un registro genuinamente nuevo)
+      if (document_number && document_number.trim() !== '' && !profile_id && !person_source) {
         const { data: existingStudent, error: searchError } = await supabase
           .from('students')
           .select('id, first_name, last_name')
@@ -385,6 +412,7 @@ id,
         phone: phone || null,
         address: address ? address.trim() : null,
         document_number: document_number ? document_number.trim() : null,
+        profile_id: profile_id || null,
         nuevo: nuevo !== undefined ? nuevo : true
       };
 
@@ -484,6 +512,26 @@ id,
 
       if (error) {
         throw error;
+      }
+
+      // Sincronizar datos personales con otros registros del mismo perfil
+      if (data.profile_id) {
+        const personalFields = ['first_name', 'last_name', 'birthdate', 'gender', 'phone', 'address', 'document_number'];
+        const syncUpdates = {};
+        personalFields.forEach(field => {
+          if (cleanUpdates[field] !== undefined) {
+            syncUpdates[field] = cleanUpdates[field];
+          }
+        });
+
+        if (Object.keys(syncUpdates).length > 0) {
+          console.log(`Sincronizando datos para perfil ${data.profile_id}:`, syncUpdates);
+          await supabase
+            .from('students')
+            .update(syncUpdates)
+            .eq('profile_id', data.profile_id)
+            .neq('id', id); // No actualizar el que acabamos de cambiar
+        }
       }
 
       const studentWithDepartment = {

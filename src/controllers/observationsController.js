@@ -5,17 +5,34 @@ const observationsController = {
     getByStudentId: async (req, res, next) => {
         try {
             const { studentId } = req.params;
-            const { data, error } = await supabase
+            // Obtener el perfil del estudiante para buscar observaciones compartidas
+            const { data: student, error: studentError } = await supabase
+                .from('students')
+                .select('profile_id')
+                .eq('id', studentId)
+                .single();
+
+            if (studentError) throw studentError;
+
+            let query = supabase
                 .from('student_observations')
                 .select(`
-          *,
-          profiles (
-            first_name,
-            last_name
-          )
-        `)
-                .eq('student_id', studentId)
-                .order('created_at', { ascending: false });
+                  *,
+                  profiles (
+                    first_name,
+                    last_name
+                  )
+                `);
+
+            if (student.profile_id) {
+                // Si tiene perfil, buscar todas las observaciones de ese perfil
+                query = query.eq('profile_id', student.profile_id);
+            } else {
+                // Si no, solo las de este student_id
+                query = query.eq('student_id', studentId);
+            }
+
+            const { data, error } = await query.order('created_at', { ascending: false });
 
             if (error) throw error;
             res.json({ success: true, data: data || [] });
@@ -28,9 +45,24 @@ const observationsController = {
     create: async (req, res, next) => {
         try {
             const { student_id, observation, created_by } = req.body;
+
+            // Obtener el profile_id del estudiante
+            const { data: student, error: studentError } = await supabase
+                .from('students')
+                .select('profile_id')
+                .eq('id', student_id)
+                .single();
+
+            if (studentError) throw studentError;
+
             const { data, error } = await supabase
                 .from('student_observations')
-                .insert([{ student_id, observation, created_by }])
+                .insert([{
+                    student_id,
+                    observation,
+                    created_by,
+                    profile_id: student.profile_id
+                }])
                 .select()
                 .single();
 
