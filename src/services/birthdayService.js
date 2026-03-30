@@ -20,6 +20,7 @@ class BirthdayService {
           last_name,
           birthdate,
           department_id,
+          assigned_class,
           departments (name)
         `)
                 .not('birthdate', 'is', null)
@@ -69,7 +70,7 @@ class BirthdayService {
                 // Buscar líderes y maestros (incluyendo teléfono)
                 const { data: leaders, error: leaderError } = await supabase
                     .from('profiles')
-                    .select('id, first_name, last_name, email, phone, role')
+                    .select('id, first_name, last_name, email, phone, role, assigned_class')
                     .in('role', ['lider', 'maestro'])
                     .eq('department_id', deptId);
 
@@ -86,10 +87,20 @@ class BirthdayService {
                 // Enviar notificaciones
                 for (const leader of leaders) {
                     try {
+                        // Filtrar alumnos que pertenecen a la clase de este líder/maestro
+                        // Si el líder no tiene clase asignada, ve a todos los del departamento
+                        const relevantStudents = students.filter(s =>
+                            !leader.assigned_class ||
+                            leader.assigned_class.toLowerCase() === s.assigned_class?.toLowerCase()
+                        );
+
+                        if (relevantStudents.length === 0) continue;
+
+                        const relevantStudentNames = relevantStudents.map(s => `${s.first_name} ${s.last_name}`).join(', ');
                         const title = `🎂 ¡Cumpleaños en ${deptName}!`;
-                        const body = students.length === 1
-                            ? `Hoy es el cumpleaños de ${studentNames}`
-                            : `Hoy cumplen años: ${studentNames}`;
+                        const body = relevantStudents.length === 1
+                            ? `Hoy es el cumpleaños de ${relevantStudentNames}`
+                            : `Hoy cumplen años: ${relevantStudentNames}`;
 
                         // A. Notificación Push (Firebase)
                         const result = await NotificationService.enviarAUsuario(leader.id, {
@@ -98,7 +109,7 @@ class BirthdayService {
                         }, {
                             tipo: 'cumpleanos',
                             departmentId: deptId,
-                            studentIds: JSON.stringify(students.map(s => s.id))
+                            studentIds: JSON.stringify(relevantStudents.map(s => s.id))
                         });
 
                         notificationsSent.push({
@@ -128,10 +139,7 @@ class BirthdayService {
                                 success: waResult,
                                 type: 'whatsapp'
                             });
-                        } else {
-                            console.warn(`⚠️ [BirthdayService] Líder ${leader.first_name} no tiene teléfono registrado para WhatsApp.`);
                         }
-
                     } catch (notifyError) {
                         console.error(`❌ [BirthdayService] Error notificando al líder ${leader.id}:`, notifyError.message);
                     }
