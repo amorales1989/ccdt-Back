@@ -124,7 +124,7 @@ class BirthdayService {
                             console.log(`📤 [BirthdayService] Intentando enviar WhatsApp a ${leader.first_name} (${leader.phone})...`);
                             const waText = `🎂 *¡Cumpleaños en ${deptName}!* 🎂\n\n${body}\n\n_Enviado automáticamente por CCDT Bot_`;
 
-                            const waResult = await WhatsAppService.sendMessage(leader.phone, waText);
+                            const waResult = await WhatsAppService.sendMessage(1, leader.phone, waText);
 
                             if (waResult) {
                                 console.log(`✅ [BirthdayService] WhatsApp enviado a ${leader.first_name}`);
