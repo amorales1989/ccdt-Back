@@ -6,7 +6,7 @@ const initScheduledJobs = () => {
     console.log('⏰ Inicializando Cron Jobs...');
 
     // Programar tarea para las 8:00 AM todos los días (Cumpleaños)
-    cron.schedule('0 8 * * *', async () => {
+    cron.schedule('20 8 * * *', async () => {
         console.log('⏰ [Cron Job] Ejecutando verificación diaria de cumpleaños (8:00 AM)...');
         try {
             const result = await BirthdayService.checkDailyBirthdays();
