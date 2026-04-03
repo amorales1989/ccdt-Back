@@ -49,4 +49,6 @@ router.post('/', (req, res) => {
 
 router.post('/notify-new-request', eventsController.notifyNewRequest);
 router.post('/notify-request-response', eventsController.notifyRequestResponse);
+router.post('/notify-massive', eventsController.notifyMassiveApprovedEvent);
+
 module.exports = router;

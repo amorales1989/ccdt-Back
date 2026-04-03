@@ -553,6 +553,83 @@ const eventsController = {
         error: error.message
       });
     }
+  },
+
+  // POST /api/events/notify-massive - Notificar masivamente la aprobación de un evento
+  notifyMassiveApprovedEvent: async (req, res, next) => {
+    try {
+      const {
+        eventTitle,
+        eventDate,
+        description
+      } = req.body;
+
+      if (!eventTitle || !eventDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Los campos "eventTitle" y "eventDate" son requeridos'
+        });
+      }
+
+      console.log(`🔄 Buscando líderes, maestros y directores para notificar nuevo evento...`);
+      const { data: profiles, error: profError } = await supabaseAdmin
+        .from('profiles')
+        .select('first_name, phone')
+        .in('role', ['lider', 'maestro', 'director'])
+        .not('phone', 'is', null);
+
+      if (profError) throw profError;
+
+      if (profiles && profiles.length > 0) {
+        const waText = `✅ *Nuevo Evento Aprobado*\n\n*Evento:* ${eventTitle}\n*Fecha:* ${eventDate}\n*Descripción:* ${description || 'Sin descripción detallada.'}\n\n_Accede al calendario para más detalles._`;
+
+        console.log(`📤 Enviando WhatsApp a ${profiles.length} usuarios...`);
+        let countSent = 0;
+        let countFailed = 0;
+
+        // Enviar mensajes limitando fallos individuales
+        await Promise.allSettled(
+          profiles.map(async (profile) => {
+            if (profile.phone && profile.phone.trim() !== '') {
+              try {
+                // Logueamos a consola para registro, y ejecutamos WhatsApp
+                console.log(`[PRODUCCIÓN] Mandando WhatsApp a ${profile.first_name} (${profile.phone}) para evento: "${eventTitle}"`);
+                await WhatsAppService.sendMessage(1, profile.phone, waText);
+                countSent++;
+              } catch (waErr) {
+                console.error(`❌ Fallo al enviar WhatsApp masivo a ${profile.phone}:`, waErr.message);
+                countFailed++;
+              }
+            }
+          })
+        );
+
+        console.log(`✅ Notificación masiva finalizada. Enviados: ${countSent}, Fallidos: ${countFailed}.`);
+
+        return res.status(200).json({
+          success: true,
+          message: 'Notificación masiva procesada',
+          data: {
+            sent: countSent,
+            failed: countFailed,
+            totalTargets: profiles.length
+          }
+        });
+      } else {
+        return res.status(200).json({
+          success: true,
+          message: 'No se encontraron destinatarios con roles pertinentes y teléfono registrado'
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error en notifyMassiveApprovedEvent:', error);
+
+      res.status(500).json({
+        success: false,
+        message: 'Error al procesar notificación masiva',
+        error: error.message
+      });
+    }
   }
 };
 
