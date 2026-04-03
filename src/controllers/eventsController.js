@@ -10,6 +10,18 @@ const { Resend } = require('resend');
 
 const resend = new Resend('re_UV2bZBBj_5DpDPTZM2KnYnFfZ3ejNzoXr');
 
+// ✅ Helper global para formatear a DD/MM/YYYY sin desfases
+const formatDateToDDMMYYYY = (dateString) => {
+  if (!dateString) return 'No especificada';
+  // Soporta YYYY-MM-DD y YYYY-MM-DDTHH:mm:ss...
+  const pureDate = dateString.split('T')[0];
+  const parts = pureDate.split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return dateString;
+};
+
 const eventsController = {
   // GET /api/events
   getAll: async (req, res, next) => {
@@ -269,17 +281,7 @@ const eventsController = {
         });
       }
 
-      // ✅ Formatear a DD/MM/YYYY sin desfases de zona horaria
-      const formatDataForNotify = (dateString) => {
-        if (!dateString) return 'No especificada';
-        const parts = dateString.split('T')[0].split('-');
-        if (parts.length === 3) {
-          return `${parts[2]}/${parts[1]}/${parts[0]}`;
-        }
-        return dateString;
-      };
-
-      const adjustedDateForN8n = formatDataForNotify(eventDate);
+      const adjustedDateForN8n = formatDateToDDMMYYYY(eventDate);
 
       // ✅ Enviar datos al webhook de n8n con fecha ajustada
       const n8nPayload = {
@@ -417,17 +419,7 @@ const eventsController = {
         });
       }
 
-      // ✅ Restar un día a la fecha y formatear a DD-MM-YYYY
-      const adjustDateForN8n = (dateString) => {
-        const date = new Date(dateString + 'T12:00:00');
-        date.setDate(date.getDate() - 1);
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${day}-${month}-${year}`;
-      };
-
-      const adjustedDateForN8n = adjustDateForN8n(eventDate);
+      const adjustedDateForN8n = formatDateToDDMMYYYY(eventDate);
 
       // ✅ Determinar estado y colores
       const isApproved = estado.toLowerCase() === 'aprobado';
@@ -581,7 +573,8 @@ const eventsController = {
       if (profError) throw profError;
 
       if (profiles && profiles.length > 0) {
-        const waText = `✅ *Nuevo Evento Aprobado*\n\n*Evento:* ${eventTitle}\n*Fecha:* ${eventDate}\n*Descripción:* ${description || 'Sin descripción detallada.'}\n\n_Accede al calendario para más detalles._`;
+        const formattedDate = formatDateToDDMMYYYY(eventDate);
+        const waText = `✅ *Nuevo Evento Aprobado*\n\n*Evento:* ${eventTitle}\n*Fecha:* ${formattedDate}\n*Descripción:* ${description || 'Sin descripción detallada.'}\n\n_Accede al calendario para más detalles._`;
 
         console.log(`📤 Enviando WhatsApp a ${profiles.length} usuarios...`);
         let countSent = 0;
