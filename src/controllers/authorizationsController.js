@@ -17,7 +17,8 @@ const authorizationsController = {
             departments (name)
           ),
           departments (name)
-        `);
+        `)
+        .eq('company_id', req.companyId);
 
       // Filtros opcionales
       if (department_id) {
@@ -72,6 +73,7 @@ const authorizationsController = {
           departments (name)
         `)
         .eq('id', id)
+        .eq('company_id', req.companyId)
         .single();
 
       if (error) {
@@ -111,6 +113,7 @@ const authorizationsController = {
           departments (name)
         `)
         .eq('student_id', student_id)
+        .eq('company_id', req.companyId)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -148,7 +151,8 @@ const authorizationsController = {
             departments (name)
           )
         `)
-        .eq('department_id', department_id);
+        .eq('department_id', department_id)
+        .eq('company_id', req.companyId);
 
       // Filtrar por clase si se proporciona
       if (className) {
@@ -196,6 +200,7 @@ const authorizationsController = {
         .from('students')
         .select('id, first_name, last_name')
         .eq('id', student_id)
+        .eq('company_id', req.companyId)
         .single();
 
       if (studentError || !student) {
@@ -209,6 +214,7 @@ const authorizationsController = {
         .from('departments')
         .select('id, name, classes')
         .eq('id', department_id)
+        .eq('company_id', req.companyId)
         .single();
 
       if (deptError || !department) {
@@ -231,6 +237,7 @@ const authorizationsController = {
         .eq('student_id', student_id)
         .eq('department_id', department_id)
         .eq('class', className)
+        .eq('company_id', req.companyId)
         .single();
 
       if (existingAuth) {
@@ -242,7 +249,8 @@ const authorizationsController = {
       const authorizationData = {
         student_id,
         department_id,
-        class: className
+        class: className,
+        company_id: req.companyId
       };
 
       const { data, error } = await supabase
@@ -297,6 +305,7 @@ const authorizationsController = {
         .from('student_authorizations')
         .update({ class: className })
         .eq('id', id)
+        .eq('company_id', req.companyId)
         .select(`
           *,
           students (
@@ -343,7 +352,8 @@ const authorizationsController = {
       const { error } = await supabase
         .from('student_authorizations')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .eq('company_id', req.companyId);
 
       if (error) {
         throw error;
@@ -368,7 +378,8 @@ const authorizationsController = {
         .from('student_authorizations')
         .delete()
         .eq('student_id', student_id)
-        .eq('department_id', department_id);
+        .eq('department_id', department_id)
+        .eq('company_id', req.companyId);
 
       // Filtrar por clase si se proporciona
       if (className) {

@@ -13,7 +13,7 @@ const whatsappController = {
             const { data, error } = await supabase
                 .from('companies')
                 .select('whatsapp_status, whatsapp_qr')
-                .eq('id', companyId)
+                .eq('id', req.companyId)
                 .single();
 
             if (error) throw error;
@@ -36,7 +36,7 @@ const whatsappController = {
             }
 
             // Iniciar proceso de conexión
-            await WhatsAppService.conectar(companyId);
+            await WhatsAppService.conectar(req.companyId);
 
             res.json({
                 success: true,
@@ -54,7 +54,7 @@ const whatsappController = {
                 return res.status(400).json({ success: false, message: 'Falta companyId' });
             }
 
-            await WhatsAppService.desconectar(companyId);
+            await WhatsAppService.desconectar(req.companyId);
 
             res.json({
                 success: true,
@@ -72,7 +72,7 @@ const whatsappController = {
                 return res.status(400).json({ success: false, message: 'Faltan parámetros' });
             }
 
-            const result = await WhatsAppService.sendMessage(companyId, phoneNumber, message);
+            const result = await WhatsAppService.sendMessage(req.companyId, phoneNumber, message);
             res.json(result);
         } catch (error) {
             next(error);

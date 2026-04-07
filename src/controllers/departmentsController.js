@@ -14,6 +14,7 @@ const departmentsController = {
       const { data, error } = await supabase
         .from('departments')
         .select(selectFields)
+        .eq('company_id', req.companyId)
         .order('name');
 
       if (error) {
@@ -39,6 +40,7 @@ const departmentsController = {
         .from('departments')
         .select('*')
         .eq('id', id)
+        .eq('company_id', req.companyId)
         .single();
 
       if (error) {
@@ -69,6 +71,7 @@ const departmentsController = {
         .from('departments')
         .select('id, name, classes')
         .eq('id', id)
+        .eq('company_id', req.companyId)
         .single();
 
       if (deptError) {
@@ -105,7 +108,8 @@ const departmentsController = {
           *,
           departments (name)
         `)
-        .eq('department_id', id);
+        .eq('department_id', id)
+        .eq('company_id', req.companyId);
 
       // Filtrar por clase si se proporciona
       if (assigned_class) {
@@ -147,7 +151,8 @@ const departmentsController = {
       const { data: students, error } = await supabase
         .from('students')
         .select('id, gender, assigned_class')
-        .eq('department_id', id);
+        .eq('department_id', id)
+        .eq('company_id', req.companyId);
 
       if (error) {
         throw error;
@@ -163,7 +168,7 @@ const departmentsController = {
           if (!classStats[className]) {
             classStats[className] = { male: 0, female: 0, total: 0 };
           }
-          
+
           if (student.gender === 'masculino') {
             classStats[className].male++;
           } else if (student.gender === 'femenino') {
@@ -206,7 +211,8 @@ const departmentsController = {
 
       const departmentData = {
         name: name.trim(),
-        classes: classes || []
+        classes: classes || [],
+        company_id: req.companyId
       };
 
       const { data, error } = await supabase
@@ -244,6 +250,7 @@ const departmentsController = {
         .from('departments')
         .update(updates)
         .eq('id', id)
+        .eq('company_id', req.companyId)
         .select()
         .single();
 
@@ -276,6 +283,7 @@ const departmentsController = {
         .from('students')
         .select('id')
         .eq('department_id', id)
+        .eq('company_id', req.companyId)
         .limit(1);
 
       if (studentsError) {
@@ -291,7 +299,8 @@ const departmentsController = {
       const { error } = await supabase
         .from('departments')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .eq('company_id', req.companyId);
 
       if (error) {
         throw error;
@@ -322,6 +331,7 @@ const departmentsController = {
         .from('departments')
         .update({ classes })
         .eq('id', id)
+        .eq('company_id', req.companyId)
         .select()
         .single();
 

@@ -3,7 +3,7 @@ const NotificationService = require('./notificationService');
 const WhatsAppService = require('./whatsappService');
 
 class BirthdayService {
-    async checkDailyBirthdays() {
+    async checkDailyBirthdays(companyId = null) {
         try {
             const today = new Date();
             const currentMonth = today.getMonth() + 1;
@@ -24,7 +24,8 @@ class BirthdayService {
           departments (name)
         `)
                 .not('birthdate', 'is', null)
-                .is('deleted_at', null);
+                .is('deleted_at', null)
+                .eq('company_id', companyId || 1);
 
             if (error) throw error;
 
@@ -72,7 +73,8 @@ class BirthdayService {
                     .from('profiles')
                     .select('id, first_name, last_name, email, phone, role, assigned_class')
                     .in('role', ['lider', 'maestro'])
-                    .eq('department_id', deptId);
+                    .eq('department_id', deptId)
+                    .eq('company_id', companyId || 1);
 
                 if (leaderError) {
                     console.error(`❌ [BirthdayService] Error buscando líderes para dept ${deptId}:`, leaderError.message);
@@ -124,7 +126,7 @@ class BirthdayService {
                             console.log(`📤 [BirthdayService] Intentando enviar WhatsApp a ${leader.first_name} (${leader.phone})...`);
                             const waText = `🎂 *¡Cumpleaños en ${deptName}!* 🎂\n\n${body}\n\n_Enviado automáticamente por CCDT Bot_`;
 
-                            const waResult = await WhatsAppService.sendMessage(1, leader.phone, waText);
+                            const waResult = await WhatsAppService.sendMessage(companyId || 1, leader.phone, waText);
 
                             if (waResult) {
                                 console.log(`✅ [BirthdayService] WhatsApp enviado a ${leader.first_name}`);

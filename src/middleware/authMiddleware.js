@@ -79,6 +79,11 @@ const authMiddleware = async (req, res, next) => {
 
         // Adjuntar usuario al request para uso posterior
         req.user = user;
+
+        // 4. Extraer companyId (del header X-Company-Id o query param)
+        const companyId = req.headers['x-company-id'] || req.query.companyId || '1';
+        req.companyId = parseInt(companyId, 10) || 1;
+
         next();
     } catch (error) {
         console.error('Error en AuthMiddleware:', error);

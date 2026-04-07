@@ -29,6 +29,7 @@ const eventsController = {
       const { data, error } = await supabase
         .from('events')
         .select('*')
+        .eq('company_id', req.companyId)
         .order('date', { ascending: true });
 
       if (error) {
@@ -54,6 +55,7 @@ const eventsController = {
         .from('events')
         .select('*')
         .eq('id', id)
+        .eq('company_id', req.companyId)
         .single();
 
       if (error) {
@@ -82,6 +84,7 @@ const eventsController = {
         .select('*')
         .eq('solicitud', true)
         .in('estado', ['solicitud', null])
+        .eq('company_id', req.companyId)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -108,6 +111,7 @@ const eventsController = {
         .select('*')
         .gte('date', today)
         .neq('solicitud', true)
+        .eq('company_id', req.companyId)
         .order('date', { ascending: true });
 
       if (error) {
@@ -144,7 +148,8 @@ const eventsController = {
         solicitud,
         estado: estado || null,
         departamento: departamento || null,
-        solicitante: solicitante || null
+        solicitante: solicitante || null,
+        company_id: req.companyId
       };
 
       const { data, error } = await supabase
@@ -177,6 +182,7 @@ const eventsController = {
         .from('events')
         .update(updates)
         .eq('id', id)
+        .eq('company_id', req.companyId)
         .select()
         .single();
 
@@ -207,7 +213,8 @@ const eventsController = {
       const { error } = await supabase
         .from('events')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .eq('company_id', req.companyId);
 
       if (error) {
         throw error;
@@ -238,6 +245,7 @@ const eventsController = {
         .from('events')
         .update({ estado })
         .eq('id', id)
+        .eq('company_id', req.companyId)
         .select()
         .single();
 
@@ -345,7 +353,8 @@ const eventsController = {
         const { data: secretaries, error: secError } = await supabaseAdmin
           .from('profiles')
           .select('first_name, phone')
-          .in('role', ['secretaria', 'secr.-calendario']);
+          .in('role', ['secretaria', 'secr.-calendario'])
+          .eq('company_id', req.companyId);
 
         if (secError) throw secError;
 
@@ -355,7 +364,7 @@ const eventsController = {
         const adminPhone = '1159080306';
         const adminWaText = baseWaText + `*Descripción:* ${description || 'Sin descripción'}\n\n_Accede al panel para revisarla._`;
         try {
-          await WhatsAppService.sendMessage(1, adminPhone, adminWaText);
+          await WhatsAppService.sendMessage(req.companyId, adminPhone, adminWaText);
           console.log(`✅ Alerta de nueva solicitud enviada al administrador principal (${adminPhone}).`);
         } catch (err) {
           console.error('[CCDT] Error enviando WA al admin principal:', err.message);
@@ -367,7 +376,7 @@ const eventsController = {
 
           for (const sec of secretaries) {
             if (sec.phone) {
-              await WhatsAppService.sendMessage(1, sec.phone, secWaText);
+              await WhatsAppService.sendMessage(req.companyId, sec.phone, secWaText);
             }
           }
         }
@@ -502,13 +511,14 @@ const eventsController = {
             .from('profiles')
             .select('first_name, phone')
             .eq('id', solicitante_id)
+            .eq('company_id', req.companyId)
             .single();
 
           if (!reqError && requester && requester.phone) {
             const waText = `${statusEmoji} *Tu solicitud de evento ha sido ${statusText}*\n\n*Evento:* ${eventTitle}\n*Fecha:* ${adjustedDateForN8n}\n*Respuesta:* ${adminMessage || 'Sin mensaje adicional.'}\n\n_Gracias por tu solicitud._`;
 
             console.log(`📤 Enviando WhatsApp de respuesta a ${requester.first_name}...`);
-            const waResult = await WhatsAppService.sendMessage(1, requester.phone, waText);
+            const waResult = await WhatsAppService.sendMessage(req.companyId, requester.phone, waText);
 
             // ✅ Monitorear el resultado del WhatsApp de respuesta
             if (waResult) {
@@ -568,6 +578,7 @@ const eventsController = {
         .from('profiles')
         .select('first_name, phone')
         .in('role', ['lider', 'maestro', 'director'])
+        .eq('company_id', req.companyId)
         .not('phone', 'is', null);
 
       if (profError) throw profError;
@@ -587,7 +598,7 @@ const eventsController = {
               try {
                 // Logueamos a consola para registro, y ejecutamos WhatsApp
                 console.log(`[PRODUCCIÓN] Mandando WhatsApp a ${profile.first_name} (${profile.phone}) para evento: "${eventTitle}"`);
-                await WhatsAppService.sendMessage(1, profile.phone, waText);
+                await WhatsAppService.sendMessage(req.companyId, profile.phone, waText);
                 countSent++;
               } catch (waErr) {
                 console.error(`❌ Fallo al enviar WhatsApp masivo a ${profile.phone}:`, waErr.message);

@@ -10,6 +10,7 @@ const observationsController = {
                 .from('students')
                 .select('profile_id')
                 .eq('id', studentId)
+                .eq('company_id', req.companyId)
                 .single();
 
             if (studentError) throw studentError;
@@ -22,7 +23,8 @@ const observationsController = {
                     first_name,
                     last_name
                   )
-                `);
+                `)
+                .eq('company_id', req.companyId);
 
             if (student.profile_id) {
                 // Si tiene perfil, buscar todas las observaciones de ese perfil
@@ -51,6 +53,7 @@ const observationsController = {
                 .from('students')
                 .select('profile_id')
                 .eq('id', student_id)
+                .eq('company_id', req.companyId)
                 .single();
 
             if (studentError) throw studentError;
@@ -61,7 +64,8 @@ const observationsController = {
                     student_id,
                     observation,
                     created_by,
-                    profile_id: student.profile_id
+                    profile_id: student.profile_id,
+                    company_id: req.companyId
                 }])
                 .select()
                 .single();
@@ -82,6 +86,7 @@ const observationsController = {
                 .from('student_observations')
                 .update({ observation })
                 .eq('id', id)
+                .eq('company_id', req.companyId)
                 .select()
                 .single();
 
@@ -99,7 +104,8 @@ const observationsController = {
             const { error } = await supabase
                 .from('student_observations')
                 .delete()
-                .eq('id', id);
+                .eq('id', id)
+                .eq('company_id', req.companyId);
 
             if (error) throw error;
             res.json({ success: true, message: 'Observation deleted' });

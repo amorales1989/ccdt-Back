@@ -30,12 +30,12 @@ class NotificationService {
     }
   }
   // Enviar a empresa
-  async enviarAEmpresa(empresaId, notification, data = {}, link = '/') {
+  async enviarAEmpresa(companyId, notification, data = {}, link = '/') {
     try {
       const { data: rows, error } = await supabase
         .from('usuarios_tokens_fcm')
         .select('token')
-        .eq('empresa_id', empresaId)
+        .eq('company_id', companyId)
         .eq('activo', true);
 
       if (error) throw error;
@@ -43,7 +43,7 @@ class NotificationService {
       const tokens = rows.map(r => r.token);
 
       if (tokens.length === 0) {
-        console.log('No hay tokens para la empresa:', empresaId);
+        console.log('No hay tokens para la empresa:', companyId);
         return { success: false, message: 'No hay dispositivos registrados' };
       }
 
@@ -62,6 +62,7 @@ class NotificationService {
         .select('token')
         .eq('id_local', localId)
         .eq('activo', true);
+      // Note: localId is assumed to be globally unique or scoped via companies if needed.
 
       if (error) throw error;
 
@@ -116,15 +117,20 @@ class NotificationService {
   }
 
   // Enviar a usuarios por rol
-  async enviarPorRol(rol, notification, data = {}, link = '/') {
+  async enviarPorRol(rol, notification, data = {}, link = '/', companyId = null) {
     try {
 
-      // Obtener tokens activos de usuarios con ese rol
-      const { data: rows, error } = await supabase
+      let q = supabase
         .from('usuarios_tokens_fcm')
         .select('token')
         .eq('role', rol)
         .eq('activo', true);
+
+      if (companyId) {
+        q = q.eq('company_id', companyId);
+      }
+
+      const { data: rows, error } = await q;
 
       if (error) throw error;
 

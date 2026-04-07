@@ -32,7 +32,7 @@ const webhookController = {
                 const message = `¡Hola ${name}! Soy el bot de *CCDT*. 🤖\n\nBienvenido/a. Este será tu canal oficial para recibir notificaciones automáticas relevantes.\n\nNo es necesario que respondas a este mensaje. ¡Que tengas un gran día! ⚡`;
 
                 // Enviar mensaje
-                const result = await WhatsAppService.sendMessage(phone, message);
+                const result = await WhatsAppService.sendMessage(record.company_id || 1, phone, message);
 
                 if (result) {
                     console.log(`✅ Saludo automatizado enviado a ${name}`);
@@ -95,7 +95,7 @@ const webhookController = {
                 console.log(`🚀 Iniciando difusión de evento: ${record.title}`);
 
                 // Disparamos la difusión en segundo plano para no bloquear el webhook
-                broadcastToAll(broadcastMessage);
+                broadcastToAll(broadcastMessage, record.company_id || 1);
             }
 
             res.json({ success: true, received: true });
@@ -144,11 +144,12 @@ const webhookController = {
 /**
  * Helper para enviar mensajes a todos los perfiles con teléfono
  */
-async function broadcastToAll(message) {
+async function broadcastToAll(message, companyId) {
     try {
         const { data: profiles, error } = await supabase
             .from('profiles')
             .select('first_name, phone')
+            .eq('company_id', companyId)
             .not('phone', 'is', null);
 
         if (error) throw error;
@@ -158,7 +159,7 @@ async function broadcastToAll(message) {
 
         for (const profile of profiles) {
             if (profile.phone) {
-                await WhatsAppService.sendMessage(profile.phone, message);
+                await WhatsAppService.sendMessage(companyId, profile.phone, message);
                 // Delay aleatorio entre 2-4 segundos
                 await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 2000));
             }

@@ -1,13 +1,13 @@
 const { messaging } = require('../config/firebase');
-const {supabase }= require('../config/supabase');
+const { supabase } = require('../config/supabase');
 
 // Registrar token
 exports.registrarToken = async (req, res) => {
   try {
     const { token, ua, plataforma, idLocal, usuario_id, role } = req.body;
-    const usuarioId = usuario_id || '0643cac2-fb01-475d-aeee-ea53a81b6445'; 
-    
-   if (!token) {
+    const usuarioId = usuario_id || '0643cac2-fb01-475d-aeee-ea53a81b6445';
+
+    if (!token) {
       return res.status(400).json({ error: 'Token requerido' });
     }
 
@@ -16,9 +16,10 @@ exports.registrarToken = async (req, res) => {
       .from('usuarios_tokens_fcm')
       .select('id')
       .eq('token', token)
+      .eq('company_id', req.companyId)
       .single();
 
-    if (errorBusqueda && errorBusqueda.code !== 'PGRST116') { 
+    if (errorBusqueda && errorBusqueda.code !== 'PGRST116') {
       throw errorBusqueda;
     }
 
@@ -31,12 +32,13 @@ exports.registrarToken = async (req, res) => {
           user_agent: ua,
           plataforma: plataforma,
           //id_local: idLocal,
-          //empresa_id: req.user.empresaId,
+          company_id: req.companyId,
           activo: true,
           fecha_actualizacion: new Date().toISOString(),
           role: role
         })
-        .eq('token', token);
+        .eq('token', token)
+        .eq('company_id', req.companyId);
 
       if (errorUpdate) throw errorUpdate;
     } else {
@@ -48,17 +50,17 @@ exports.registrarToken = async (req, res) => {
           token: token,
           user_agent: ua,
           plataforma: plataforma,
-         // id_local: idLocal,
-          //empresa_id: req.user.empresaId
+          // id_local: idLocal,
+          company_id: req.companyId,
           role: role,
         });
 
       if (errorInsert) throw errorInsert;
     }
 
-    res.json({ 
-      success: true, 
-      message: 'Token registrado correctamente' 
+    res.json({
+      success: true,
+      message: 'Token registrado correctamente'
     });
   } catch (error) {
     console.error('Error registrando token:', error);
@@ -78,13 +80,14 @@ exports.eliminarToken = async (req, res) => {
     const { error } = await supabase
       .from('usuarios_tokens_fcm')
       .update({ activo: false })
-      .eq('token', token);
+      .eq('token', token)
+      .eq('company_id', req.companyId);
 
     if (error) throw error;
 
-    res.json({ 
-      success: true, 
-      message: 'Token eliminado correctamente' 
+    res.json({
+      success: true,
+      message: 'Token eliminado correctamente'
     });
   } catch (error) {
     console.error('Error eliminando token:', error);

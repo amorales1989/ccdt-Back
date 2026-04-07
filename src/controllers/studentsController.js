@@ -5,7 +5,7 @@ const studentsController = {
   // POST /api/students/check-birthdays
   checkAndNotifyBirthdays: async (req, res, next) => {
     try {
-      const result = await BirthdayService.checkDailyBirthdays();
+      const result = await BirthdayService.checkDailyBirthdays(req.companyId);
       res.json(result);
     } catch (error) {
       next(error);
@@ -30,7 +30,8 @@ const studentsController = {
   *,
   departments(name)
     `)
-        .is('deleted_at', null); // Excluir estudiantes eliminados
+        .is('deleted_at', null) // Excluir estudiantes eliminados
+        .eq('company_id', req.companyId);
 
       // Filtrar por departamento si se proporciona
       if (department_id) {
@@ -72,7 +73,8 @@ student_id,
   )
     `)
           .eq('department_id', department_id)
-          .eq('class', assigned_class);
+          .eq('class', assigned_class)
+          .eq('company_id', req.companyId);
 
         if (!authError && authorizedData) {
           // Agregar estudiantes autorizados que no estén ya en la lista
@@ -106,7 +108,8 @@ student_id,
           .from('students')
           .select('profile_id')
           .in('profile_id', profileIds)
-          .is('deleted_at', null);
+          .is('deleted_at', null)
+          .eq('company_id', req.companyId);
 
         if (!countError && counts) {
           counts.forEach(c => {
@@ -143,6 +146,7 @@ student_id,
       `)
         .eq('id', id)
         .is('deleted_at', null)
+        .eq('company_id', req.companyId)
         .single();
 
       if (error) {
@@ -191,7 +195,8 @@ id,
   departments(name)
     `)
         .not('birthdate', 'is', null)
-        .is('deleted_at', null);
+        .is('deleted_at', null)
+        .eq('company_id', req.companyId);
 
       // Filtrar por departamento si se proporciona
       if (department_id) {
@@ -275,7 +280,8 @@ id,
           nuevo,
           departments (name)
         `)
-        .is('deleted_at', null);
+        .is('deleted_at', null)
+        .eq('company_id', req.companyId);
 
       // Filtrar por departamento si se proporciona
       if (department_id) {
@@ -388,6 +394,7 @@ id,
           .select('id, first_name, last_name')
           .eq('document_number', document_number.trim())
           .is('deleted_at', null)
+          .eq('company_id', req.companyId)
           .maybeSingle();
 
         if (searchError) throw searchError;
@@ -413,7 +420,8 @@ id,
         address: address ? address.trim() : null,
         document_number: document_number ? document_number.trim() : null,
         profile_id: profile_id || null,
-        nuevo: nuevo !== undefined ? nuevo : true
+        nuevo: nuevo !== undefined ? nuevo : true,
+        company_id: req.companyId
       };
 
       const { data, error } = await supabase
@@ -457,6 +465,7 @@ id,
         .select('id, document_number')
         .eq('id', id)
         .is('deleted_at', null)
+        .eq('company_id', req.companyId)
         .single();
 
       if (fetchError) {
@@ -476,6 +485,7 @@ id,
           .eq('document_number', updates.document_number)
           .neq('id', id)
           .is('deleted_at', null)
+          .eq('company_id', req.companyId)
           .maybeSingle();
 
         if (searchError) throw searchError;
@@ -504,6 +514,7 @@ id,
         .from('students')
         .update(cleanUpdates)
         .eq('id', id)
+        .eq('company_id', req.companyId)
         .select(`
           *,
           departments (name)
@@ -530,6 +541,7 @@ id,
             .from('students')
             .update(syncUpdates)
             .eq('profile_id', data.profile_id)
+            .eq('company_id', req.companyId)
             .neq('id', id); // No actualizar el que acabamos de cambiar
         }
       }
@@ -561,6 +573,7 @@ id,
         .select('id')
         .eq('id', id)
         .is('deleted_at', null)
+        .eq('company_id', req.companyId)
         .single();
 
       if (fetchError) {
@@ -576,7 +589,8 @@ id,
       const { error } = await supabase
         .from('students')
         .update({ deleted_at: new Date().toISOString() })
-        .eq('id', id);
+        .eq('id', id)
+        .eq('company_id', req.companyId);
 
       if (error) {
         throw error;
@@ -602,7 +616,8 @@ id,
           *,
           departments (name)
         `)
-        .is('deleted_at', null);
+        .is('deleted_at', null)
+        .eq('company_id', req.companyId);
 
       // Búsqueda específica por DNI
       if (document_number) {
