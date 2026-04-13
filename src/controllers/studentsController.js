@@ -39,7 +39,7 @@ const studentsController = {
       }
 
       // Filtrar por clase asignada si se proporciona
-      if (assigned_class) {
+      if (assigned_class !== undefined && assigned_class !== null && assigned_class !== 'all') {
         query = query.eq('assigned_class', assigned_class);
       }
 
@@ -204,7 +204,7 @@ id,
       }
 
       // Filtrar por clase asignada si se proporciona
-      if (assigned_class) {
+      if (assigned_class !== undefined && assigned_class !== null && assigned_class !== 'all') {
         query = query.eq('assigned_class', assigned_class);
       }
 
@@ -289,7 +289,7 @@ id,
       }
 
       // Filtrar por clase asignada si se proporciona
-      if (assigned_class) {
+      if (assigned_class !== undefined && assigned_class !== null && assigned_class !== 'all') {
         query = query.eq('assigned_class', assigned_class);
       }
 
@@ -640,7 +640,7 @@ id,
       if (department_id) {
         query = query.eq('department_id', department_id);
       }
-      if (assigned_class) {
+      if (assigned_class !== undefined && assigned_class !== null && assigned_class !== 'all') {
         query = query.eq('assigned_class', assigned_class);
       }
 
