@@ -21,6 +21,9 @@ if (!studentsController || typeof studentsController !== 'object') {
   };
 }
 
+// Importar controlador de fotos
+const { photoController, uploadMiddleware } = require('../controllers/photoController');
+
 // GET /api/students - Obtener todos los estudiantes
 router.get('/', studentsController.getAll || ((req, res) => res.json({ error: 'Method not implemented' })));
 
@@ -38,6 +41,12 @@ router.get('/:id', studentsController.getById || ((req, res) => res.json({ error
 
 // POST /api/students/check-birthdays - Verificar notificacions de cumpleaños
 router.post('/check-birthdays', studentsController.checkAndNotifyBirthdays || ((req, res) => res.json({ error: 'Method not implemented' })));
+
+// POST /api/students/:id/photo - Subir foto de estudiante
+router.post('/:id/photo', uploadMiddleware, photoController.uploadPhoto);
+
+// DELETE /api/students/:id/photo - Eliminar foto de estudiante
+router.delete('/:id/photo', photoController.deletePhoto);
 
 // POST /api/students - Crear nuevo estudiante
 router.post('/', studentsController.create || ((req, res) => res.json({ error: 'Method not implemented' })));
