@@ -53,11 +53,17 @@ try {
   console.error('❌ Error loading observations routes:', error.message);
 }
 
-let webhookRoutes;
+let webhookRoutes, materialRoutes;
 try {
   webhookRoutes = require('./src/routes/webhookRoutes');
 } catch (error) {
   console.error('❌ Error loading webhook routes:', error.message);
+}
+
+try {
+  materialRoutes = require('./src/routes/materialRoutes');
+} catch (error) {
+  console.error('❌ Error loading material routes:', error.message);
 }
 
 const app = express();
@@ -164,6 +170,10 @@ if (observationsRoutes) {
 
 if (fcmRoutes) {
   app.use('/api', authMiddleware, fcmRoutes);
+}
+
+if (materialRoutes) {
+  app.use('/api/material', authMiddleware, materialRoutes);
 }
 
 
