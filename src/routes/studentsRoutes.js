@@ -30,6 +30,9 @@ router.get('/', studentsController.getAll || ((req, res) => res.json({ error: 'M
 // GET /api/students/search - Buscar estudiantes
 router.get('/search', studentsController.search || ((req, res) => res.json({ error: 'Method not implemented' })));
 
+// GET /api/students/lookup/:document_number - Buscar persona por DNI en alumnos y perfiles
+router.get('/lookup/:document_number', studentsController.lookup || ((req, res) => res.json({ error: 'Method not implemented' })));
+
 // GET /api/students/birthdays/upcoming - Obtener próximos cumpleaños
 router.get('/birthdays/upcoming', studentsController.getUpcomingBirthdays || ((req, res) => res.json({ error: 'Method not implemented' })));
 

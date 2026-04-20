@@ -667,6 +667,70 @@ id,
     } catch (error) {
       next(error);
     }
+  },
+
+  // GET /api/students/lookup/:document_number
+  lookup: async (req, res, next) => {
+    try {
+      const { document_number } = req.params;
+
+      if (!document_number) {
+        return res.status(400).json({ success: false, message: 'DNI es requerido' });
+      }
+
+      // 1. Buscar en estudiantes
+      const { data: student, error: sError } = await supabase
+        .from('students')
+        .select('*, departments(name)')
+        .eq('document_number', document_number)
+        .is('deleted_at', null)
+        .eq('company_id', req.companyId)
+        .maybeSingle();
+
+      if (sError) throw sError;
+
+      if (student) {
+        return res.json({
+          success: true,
+          source: 'student',
+          data: {
+            ...student,
+            department: student.departments?.name,
+            fullName: `${student.first_name} ${student.last_name}`
+          }
+        });
+      }
+
+      // 2. Si no se encontró, buscar en perfiles
+      const { data: profile, error: pError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('document_number', document_number)
+        .eq('company_id', req.companyId)
+        .maybeSingle();
+
+      if (pError) throw pError;
+
+      if (profile) {
+        return res.json({
+          success: true,
+          source: 'profile',
+          data: {
+            ...profile,
+            fullName: `${profile.first_name} ${profile.last_name}`
+          }
+        });
+      }
+
+      // 3. No se encontró nada
+      res.json({
+        success: true,
+        data: null,
+        message: 'No se encontró ninguna persona con ese DNI'
+      });
+    } catch (error) {
+      next(error);
+    }
   }
 };
 
