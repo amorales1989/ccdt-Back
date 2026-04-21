@@ -11,14 +11,18 @@ class MonitorService {
         const emoji = isSuccess ? '✅' : '❌';
         const body = `${emoji} *${action.toUpperCase()}*\n*Estado:* ${status.toUpperCase()}\n*Detalle:* ${detail}${error ? `\n*Error:* ${error}` : ''}`;
 
+        /* 
+        // Comentado a pedido del usuario para evitar conflictos de sesión
         if (this.whatsappNumber) {
             try {
                 const WhatsAppService = require('./whatsappService');
-                await WhatsAppService.sendMessage(this.whatsappNumber, body, true);
+                // IMPORTANTE: Asegurar que se pase el companyId (usamos 1 por defecto para el monitor)
+                await WhatsAppService.sendMessage(1, this.whatsappNumber, body);
             } catch (waErr) {
                 console.error('[MonitorService] WhatsApp Log Error:', waErr.message);
             }
         }
+        */
     }
 
     // Helpers específicos
