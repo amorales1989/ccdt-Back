@@ -10,7 +10,7 @@ const { errorHandler, notFound } = require('./src/middleware/errorHandler');
 const authMiddleware = require('./src/middleware/authMiddleware');
 
 // Importar rutas con manejo de errores
-let eventsRoutes, studentsRoutes, departmentsRoutes, authorizationsRoutes, fcmRoutes, whatsappRoutes, observationsRoutes, maintenanceRoutes;
+let eventsRoutes, studentsRoutes, departmentsRoutes, authorizationsRoutes, fcmRoutes, whatsappRoutes, observationsRoutes, maintenanceRoutes, staffReportsRoutes;
 try {
   eventsRoutes = require('./src/routes/eventsRoutes');
 } catch (error) {
@@ -70,6 +70,12 @@ try {
   maintenanceRoutes = require('./src/routes/maintenanceRoutes');
 } catch (error) {
   console.error('❌ Error loading maintenance routes:', error.message);
+}
+
+try {
+  staffReportsRoutes = require('./src/routes/staffReportsRoutes');
+} catch (error) {
+  console.error('❌ Error loading staff reports routes:', error.message);
 }
 
 const app = express();
@@ -184,6 +190,10 @@ if (materialRoutes) {
 
 if (maintenanceRoutes) {
   app.use('/api/maintenance', authMiddleware, maintenanceRoutes);
+}
+
+if (staffReportsRoutes) {
+  app.use('/api/staff-reports', authMiddleware, staffReportsRoutes);
 }
 
 
