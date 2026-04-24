@@ -32,7 +32,7 @@ const authMiddleware = async (req, res, next) => {
         // 2. Verificar inactividad en el perfil
         const { data: profile, error: profileError } = await supabaseAdmin
             .from('profiles')
-            .select('last_active_at')
+            .select('last_active_at, company_id')
             .eq('id', user.id)
             .single();
 
@@ -80,9 +80,21 @@ const authMiddleware = async (req, res, next) => {
         // Adjuntar usuario al request para uso posterior
         req.user = user;
 
-        // 4. Extraer companyId (del header X-Company-Id o query param)
-        const companyId = req.headers['x-company-id'] || req.query.companyId || '1';
-        req.companyId = parseInt(companyId, 10) || 1;
+        // 4. Determinar companyId
+        // Priorizamos el company_id del perfil del usuario por seguridad
+        // Si el perfil no tiene company_id (no debería pasar), usamos el header o query param
+        const profileCompanyId = profile?.company_id;
+        const headerCompanyId = req.headers['x-company-id'] || req.query.companyId;
+
+        req.companyId = profileCompanyId || parseInt(headerCompanyId, 10);
+
+        // Si aún no tenemos companyId, devolvemos error (evitamos default a 1)
+        if (!req.companyId) {
+            return res.status(400).json({
+                success: false,
+                message: 'No se pudo determinar el ID de la empresa para esta solicitud'
+            });
+        }
 
         next();
     } catch (error) {
