@@ -58,7 +58,7 @@ const staffReportsController = {
                 .from('profiles')
                 .select('id, first_name, last_name, role, assigned_class, departments')
                 .eq('company_id', req.companyId)
-                .eq('assigned_class', assigned_class)
+                .ilike('assigned_class', assigned_class)
                 .in('role', ['maestro', 'colaborador']);
 
             if (error) throw error;

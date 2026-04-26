@@ -25,7 +25,7 @@ const authorizationsController = {
         query = query.eq('department_id', department_id);
       }
       if (className) {
-        query = query.eq('class', className);
+        query = query.ilike('class', className);
       }
       if (student_id) {
         query = query.eq('student_id', student_id);
@@ -156,7 +156,7 @@ const authorizationsController = {
 
       // Filtrar por clase si se proporciona
       if (className) {
-        query = query.eq('class', className);
+        query = query.ilike('class', className);
       }
 
       const { data, error } = await query;
@@ -236,7 +236,7 @@ const authorizationsController = {
         .select('id')
         .eq('student_id', student_id)
         .eq('department_id', department_id)
-        .eq('class', className)
+        .ilike('class', className)
         .eq('company_id', req.companyId)
         .single();
 
@@ -383,7 +383,7 @@ const authorizationsController = {
 
       // Filtrar por clase si se proporciona
       if (className) {
-        query = query.eq('class', className);
+        query = query.ilike('class', className);
       }
 
       const { error } = await query;

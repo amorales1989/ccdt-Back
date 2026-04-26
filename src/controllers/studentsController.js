@@ -40,7 +40,7 @@ const studentsController = {
 
       // Filtrar por clase asignada si se proporciona
       if (assigned_class !== undefined && assigned_class !== null && assigned_class !== 'all') {
-        query = query.eq('assigned_class', assigned_class);
+        query = query.ilike('assigned_class', assigned_class);
       }
 
       // Filtrar por género si se proporciona
@@ -73,7 +73,7 @@ student_id,
   )
     `)
           .eq('department_id', department_id)
-          .eq('class', assigned_class)
+          .ilike('class', assigned_class)
           .eq('company_id', req.companyId);
 
         if (!authError && authorizedData) {
@@ -205,7 +205,7 @@ id,
 
       // Filtrar por clase asignada si se proporciona
       if (assigned_class !== undefined && assigned_class !== null && assigned_class !== 'all') {
-        query = query.eq('assigned_class', assigned_class);
+        query = query.ilike('assigned_class', assigned_class);
       }
 
       const { data, error } = await query.order('first_name');
@@ -290,7 +290,7 @@ id,
 
       // Filtrar por clase asignada si se proporciona
       if (assigned_class !== undefined && assigned_class !== null && assigned_class !== 'all') {
-        query = query.eq('assigned_class', assigned_class);
+        query = query.ilike('assigned_class', assigned_class);
       }
 
       const { data, error } = await query;
@@ -641,7 +641,7 @@ id,
         query = query.eq('department_id', department_id);
       }
       if (assigned_class !== undefined && assigned_class !== null && assigned_class !== 'all') {
-        query = query.eq('assigned_class', assigned_class);
+        query = query.ilike('assigned_class', assigned_class);
       }
 
       const { data, error } = await query

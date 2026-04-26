@@ -113,7 +113,7 @@ const departmentsController = {
 
       // Filtrar por clase si se proporciona
       if (assigned_class) {
-        query = query.eq('assigned_class', assigned_class);
+        query = query.ilike('assigned_class', assigned_class);
       }
 
       // Filtrar por género si se proporciona
