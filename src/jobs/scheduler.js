@@ -42,7 +42,7 @@ const initScheduledJobs = () => {
             if (companies) {
                 for (const company of companies) {
                     await WhatsAppService.sendMessage(company.id, monitorNumber,
-                        `☀️ *CCDT Bot - Reporte Matutino*\n\nEl sistema de WhatsApp está vinculado y operativo para la empresa ${company.id}.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR')}\n⏰ Hora: ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}\n\n_Buen día._`
+                        `☀️ *CCDT Bot - Reporte Matutino*\n\nEl sistema de WhatsApp está vinculado y operativo para la empresa ${company.id}.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}\n⏰ Hora: ${new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit' })}\n\n_Buen día._`
                     );
                 }
             }
@@ -70,7 +70,7 @@ const initScheduledJobs = () => {
             if (companies) {
                 for (const company of companies) {
                     await WhatsAppService.sendMessage(company.id, monitorNumber,
-                        `🌙 *CCDT Bot - Reporte Nocturno*\n\nEl sistema sigue operativo y conectado para la empresa ${company.id} para cerrar el día.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR')}\n⏰ Hora: ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}\n\n_Hasta mañana._ 💤`
+                        `🌙 *CCDT Bot - Reporte Nocturno*\n\nEl sistema sigue operativo y conectado para la empresa ${company.id} para cerrar el día.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}\n⏰ Hora: ${new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit' })}\n\n_Hasta mañana._ 💤`
                     );
                 }
             }
