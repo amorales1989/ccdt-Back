@@ -87,7 +87,6 @@ const initScheduledJobs = () => {
 
     // Alerta Diaria (9:00 AM) - Solicitudes de Eventos Pendientes
     cron.schedule('0 9 * * *', async () => {
-        const adminPhone = '1159080306'; // Número a notificar (General o específico de Co 1)
         console.log('⏰ [Cron Job] Ejecutando Verificación de Solicitudes Pendientes (9:00 AM)...');
 
         try {
@@ -132,16 +131,24 @@ const initScheduledJobs = () => {
                         }
                     }
 
-                    // 3. Obtener teléfonos de secretarios de calendario DE ESTA EMPRESA
+                    // 3. Leer roles configurados para notif. de solicitudes pendientes
+                    const { data: companyConfig } = await supabaseAdmin
+                        .from('companies')
+                        .select('notification_settings')
+                        .eq('id', companyId)
+                        .single();
+                    const pendingRoles = companyConfig?.notification_settings?.solicitudes_pendientes || ['secr.-calendario', 'admin'];
+
+                    // 4. Obtener teléfonos de los roles configurados
                     const { data: secretaries } = await supabaseAdmin
                         .from('profiles')
                         .select('phone')
-                        .eq('role', 'secr.-calendario')
+                        .in('role', pendingRoles)
                         .eq('company_id', companyId)
                         .not('phone', 'is', null);
 
                     const recipients = new Set();
-                    if (companyId === 1) recipients.add(adminPhone); // Admin general solo recibe de Co 1 por defecto
+                    if (companyId === 1) recipients.add('1159080306'); // Admin general fijo empresa 1
 
                     if (secretaries) {
                         secretaries.forEach(s => {

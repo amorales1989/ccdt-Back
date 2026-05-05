@@ -68,11 +68,19 @@ class BirthdayService {
 
                 console.log(`📍 [BirthdayService] Procesando departamento ${deptName} (${deptId}): ${studentNames}`);
 
-                // Buscar líderes y maestros (incluyendo teléfono)
+                // Leer roles configurados para notificaciones de cumpleaños
+                const { data: companyData } = await supabase
+                    .from('companies')
+                    .select('notification_settings')
+                    .eq('id', companyId || 1)
+                    .single();
+                const birthdayRoles = companyData?.notification_settings?.cumpleanos || ['lider', 'maestro'];
+
+                // Buscar usuarios con los roles configurados (incluyendo teléfono)
                 const { data: leaders, error: leaderError } = await supabase
                     .from('profiles')
                     .select('id, first_name, last_name, email, phone, role, assigned_class')
-                    .in('role', ['lider', 'maestro'])
+                    .in('role', birthdayRoles)
                     .eq('department_id', deptId)
                     .eq('company_id', companyId || 1);
 

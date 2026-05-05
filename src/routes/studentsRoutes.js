@@ -57,6 +57,12 @@ router.post('/', studentsController.create || ((req, res) => res.json({ error: '
 // PUT /api/students/:id - Actualizar estudiante
 router.put('/:id', studentsController.update || ((req, res) => res.json({ error: 'Method not implemented' })));
 
+// POST /api/students/:id/departments - Agregar asignación de departamento
+router.post('/:id/departments', studentsController.addDepartment || ((req, res) => res.json({ error: 'Method not implemented' })));
+
+// DELETE /api/students/:id/departments/:deptId - Quitar asignación de departamento
+router.delete('/:id/departments/:deptId', studentsController.removeDepartment || ((req, res) => res.json({ error: 'Method not implemented' })));
+
 // DELETE /api/students/:id - Eliminar estudiante
 router.delete('/:id', studentsController.delete || ((req, res) => res.json({ error: 'Method not implemented' })));
 

@@ -1,4 +1,4 @@
-const { supabase } = require('../config/supabase');
+const { supabase, supabaseAdmin } = require('../config/supabase');
 const BirthdayService = require('../services/birthdayService');
 
 const studentsController = {
@@ -26,108 +26,137 @@ const studentsController = {
 
       let query = supabase
         .from('students')
-        .select(`
-  *,
-  departments(name)
-    `)
-        .is('deleted_at', null) // Excluir estudiantes eliminados
+        .select('*, departments(name)')
+        .is('deleted_at', null)
         .eq('company_id', req.companyId);
 
-      // Filtrar por departamento si se proporciona
+      // Cuando se filtra por departamento, usar la junction table
+      let deptClassMap = {}; // student_id -> assigned_class para ese depto
       if (department_id) {
-        query = query.eq('department_id', department_id);
+        let jq = supabase
+          .from('student_departments')
+          .select('student_id, assigned_class')
+          .eq('department_id', department_id)
+          .eq('company_id', req.companyId);
+
+        if (assigned_class && assigned_class !== 'all') {
+          jq = jq.ilike('assigned_class', assigned_class);
+        }
+
+        const { data: junctionRows } = await jq;
+        const studentIds = junctionRows?.map(r => r.student_id) || [];
+        junctionRows?.forEach(r => { deptClassMap[r.student_id] = r.assigned_class; });
+
+        if (studentIds.length === 0) {
+          // No hay miembros en ese departamento/clase — revisar autorizados de todas formas
+          let students = [];
+          if (assigned_class && assigned_class !== 'all') {
+            const { data: authorizedData } = await supabase
+              .from('student_authorizations')
+              .select('student_id, students!inner(*, departments(name))')
+              .eq('department_id', department_id)
+              .ilike('class', assigned_class)
+              .eq('company_id', req.companyId);
+
+            if (authorizedData) {
+              students = authorizedData.map(a => ({ ...a.students, isAuthorized: true, department: a.students?.departments?.name }));
+            }
+          }
+          return res.json({ success: true, data: students, count: students.length });
+        }
+
+        query = query.in('id', studentIds);
       }
 
-      // Filtrar por clase asignada si se proporciona
-      if (assigned_class !== undefined && assigned_class !== null && assigned_class !== 'all') {
+      // Filtros adicionales (no se aplica assigned_class sobre students cuando hay dept_id)
+      if (!department_id && assigned_class && assigned_class !== 'all') {
         query = query.ilike('assigned_class', assigned_class);
       }
 
-      // Filtrar por género si se proporciona
-      if (gender) {
-        query = query.eq('gender', gender);
-      }
-
-      // Búsqueda por nombre si se proporciona
-      if (search) {
-        query = query.or(`first_name.ilike.% ${search}%, last_name.ilike.% ${search}% `);
-      }
+      if (gender) query = query.eq('gender', gender);
+      if (search) query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%`);
 
       const { data: baseStudents, error } = await query.order('first_name');
+      if (error) throw error;
 
-      if (error) {
-        throw error;
+      let students = (baseStudents || []).map(s => ({
+        ...s,
+        department: s.departments?.name,
+        // Si hay filtro de dept, usar la clase de la junction; si no, la del propio student
+        assigned_class: department_id ? (deptClassMap[s.id] ?? s.assigned_class) : s.assigned_class,
+        is_deleted: false
+      }));
+
+      // Enriquecer con dept_assignments para mostrar todos los departamentos de cada miembro
+      if (students.length > 0) {
+        const studentIds = students.map(s => s.id);
+        // Los studentIds ya están filtrados por company_id, así que in() es suficiente para aislar la empresa
+        const { data: allAssignments, error: deptErr } = await supabase
+          .from('student_departments')
+          .select('*, departments(id, name, classes)')
+          .in('student_id', studentIds);
+        if (deptErr) console.error('student_departments fetch error:', deptErr);
+
+        const assignmentsByStudent = {};
+        (allAssignments || []).forEach(a => {
+          if (!assignmentsByStudent[a.student_id]) assignmentsByStudent[a.student_id] = [];
+          assignmentsByStudent[a.student_id].push(a);
+        });
+
+        // Para estudiantes con profile_id, traer sus assignments del user_metadata
+        const studentsWithProfile = students.filter(s => s.profile_id);
+        if (studentsWithProfile.length > 0) {
+          // Traer todos los departments para mapear nombre → objeto dept
+          const { data: allDepts } = await supabase.from('departments').select('id, name, classes').eq('company_id', req.companyId);
+          const deptByName = {};
+          (allDepts || []).forEach(d => { deptByName[d.name] = d; deptByName[d.name.toLowerCase()] = d; });
+
+          for (const s of studentsWithProfile) {
+            // Solo buscar en auth si no tiene ya dept_assignments de la junction
+            if ((assignmentsByStudent[s.id] || []).length === 0) {
+              const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(s.profile_id);
+              const profileAssignments = authUser?.user?.user_metadata?.assignments || [];
+              if (profileAssignments.length > 0) {
+                assignmentsByStudent[s.id] = profileAssignments.map(a => {
+                  const dept = deptByName[a.department] || deptByName[(a.department || '').toLowerCase()];
+                  return {
+                    student_id: s.id,
+                    department_id: a.department_id || dept?.id,
+                    assigned_class: a.assigned_class || null,
+                    role_in_dept: a.role || 'alumno',
+                    departments: dept ? { id: dept.id, name: dept.name, classes: dept.classes } : { id: a.department_id, name: a.department, classes: [] }
+                  };
+                });
+              }
+            }
+          }
+        }
+
+        students = students.map(s => ({
+          ...s,
+          dept_assignments: assignmentsByStudent[s.id] || []
+        }));
       }
 
-      let students = baseStudents || [];
-
-      // Si se proporciona department_id y assigned_class, también buscar estudiantes autorizados
-      if (department_id && assigned_class) {
-        const { data: authorizedData, error: authError } = await supabase
+      // Agregar estudiantes autorizados cuando se filtra por dept+clase
+      if (department_id && assigned_class && assigned_class !== 'all') {
+        const { data: authorizedData } = await supabase
           .from('student_authorizations')
-          .select(`
-student_id,
-  students!inner(
-              *,
-    departments(name)
-  )
-    `)
+          .select('student_id, students!inner(*, departments(name))')
           .eq('department_id', department_id)
           .ilike('class', assigned_class)
           .eq('company_id', req.companyId);
 
-        if (!authError && authorizedData) {
-          // Agregar estudiantes autorizados que no estén ya en la lista
-          const baseStudentIds = students.map(s => s.id);
-          const authorizedStudents = authorizedData
-            .map(auth => ({
-              ...auth.students,
-              isAuthorized: true
-            }))
-            .filter(student => !baseStudentIds.includes(student.id));
-
-          students = [...students, ...authorizedStudents];
+        if (authorizedData) {
+          const existingIds = new Set(students.map(s => s.id));
+          const authorized = authorizedData
+            .map(a => ({ ...a.students, isAuthorized: true, department: a.students?.departments?.name }))
+            .filter(s => !existingIds.has(s.id));
+          students = [...students, ...authorized];
         }
       }
 
-      // Mapear datos para incluir información del departamento
-      const studentsWithDepartment = students.map(student => ({
-        ...student,
-        department: student.departments?.name,
-        is_deleted: false
-      }));
-
-      // Calcular conteos de inscripciones activas para perfiles vinculados
-      const profileIds = studentsWithDepartment
-        .filter(s => s.profile_id)
-        .map(s => s.profile_id);
-
-      let enrollmentCounts = {};
-      if (profileIds.length > 0) {
-        const { data: counts, error: countError } = await supabase
-          .from('students')
-          .select('profile_id')
-          .in('profile_id', profileIds)
-          .is('deleted_at', null)
-          .eq('company_id', req.companyId);
-
-        if (!countError && counts) {
-          counts.forEach(c => {
-            enrollmentCounts[c.profile_id] = (enrollmentCounts[c.profile_id] || 0) + 1;
-          });
-        }
-      }
-
-      const finalStudents = studentsWithDepartment.map(student => ({
-        ...student,
-        active_enrollments_count: student.profile_id ? (enrollmentCounts[student.profile_id] || 0) : 0
-      }));
-
-      res.json({
-        success: true,
-        data: finalStudents,
-        count: finalStudents.length
-      });
+      res.json({ success: true, data: students, count: students.length });
     } catch (error) {
       next(error);
     }
@@ -138,16 +167,20 @@ student_id,
     try {
       const { id } = req.params;
 
-      const { data, error } = await supabase
-        .from('students')
-        .select(`
-    *,
-    departments(name)
-      `)
-        .eq('id', id)
-        .is('deleted_at', null)
-        .eq('company_id', req.companyId)
-        .single();
+      const [{ data, error }, { data: deptAssignments }] = await Promise.all([
+        supabase
+          .from('students')
+          .select('*, departments(name)')
+          .eq('id', id)
+          .is('deleted_at', null)
+          .eq('company_id', req.companyId)
+          .single(),
+        supabase
+          .from('student_departments')
+          .select('*, departments(id, name, classes)')
+          .eq('student_id', id)
+          .eq('company_id', req.companyId)
+      ]);
 
       if (error) {
         if (error.code === 'PGRST116') {
@@ -158,15 +191,14 @@ student_id,
         throw error;
       }
 
-      const studentWithDepartment = {
-        ...data,
-        department: data.departments?.name,
-        is_deleted: false
-      };
-
       res.json({
         success: true,
-        data: studentWithDepartment
+        data: {
+          ...data,
+          department: data.departments?.name,
+          is_deleted: false,
+          dept_assignments: deptAssignments || []
+        }
       });
     } catch (error) {
       next(error);
@@ -407,15 +439,21 @@ id,
         }
       }
 
-      // Solo incluir campos que existen en la tabla
+      const { dept_assignments } = req.body;
+
+      // Determinar departamento primario
+      const primaryDept = dept_assignments?.[0];
+      const primaryDeptId = primaryDept?.department_id || department_id || null;
+      const primaryClass = primaryDept?.assigned_class ?? assigned_class ?? null;
+
       const studentData = {
         first_name: first_name.trim(),
         last_name: last_name ? last_name.trim() : '',
         birthdate: birthdate || null,
         gender: gender || 'masculino',
-        department_id: department_id || null,
+        department_id: primaryDeptId,
         department: department || null,
-        assigned_class: assigned_class || null,
+        assigned_class: primaryClass,
         phone: phone || null,
         address: address ? address.trim() : null,
         document_number: document_number ? document_number.trim() : null,
@@ -427,26 +465,33 @@ id,
       const { data, error } = await supabase
         .from('students')
         .insert([studentData])
-        .select(`
-          *,
-          departments (name)
-        `)
+        .select('*, departments(name)')
         .single();
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
-      const studentWithDepartment = {
-        ...data,
-        department: data.departments?.name || data.department,
-        is_deleted: false
-      };
+      // Insertar en junction table
+      const assignments = dept_assignments?.length
+        ? dept_assignments
+        : primaryDeptId
+          ? [{ department_id: primaryDeptId, assigned_class: primaryClass, role_in_dept: 'alumno' }]
+          : [];
+
+      if (assignments.length > 0) {
+        const junctionRows = assignments.map(a => ({
+          student_id: data.id,
+          department_id: a.department_id,
+          assigned_class: a.assigned_class || null,
+          role_in_dept: a.role_in_dept || 'alumno',
+          company_id: req.companyId
+        }));
+        await supabase.from('student_departments').upsert(junctionRows, { onConflict: 'student_id,department_id' });
+      }
 
       res.status(201).json({
         success: true,
         message: 'Estudiante creado exitosamente',
-        data: studentWithDepartment
+        data: { ...data, department: data.departments?.name || data.department, is_deleted: false }
       });
     } catch (error) {
       next(error);
@@ -498,17 +543,25 @@ id,
         }
       }
 
-      // Limpiar y preparar datos
+      // Limpiar y preparar datos (excluir dept_assignments — va a la junction)
+      const { dept_assignments, ...updatesWithoutDepts } = updates;
       const cleanUpdates = {};
-      Object.keys(updates).forEach(key => {
-        if (updates[key] !== undefined) {
-          if (typeof updates[key] === 'string' && key !== 'gender') {
-            cleanUpdates[key] = updates[key].trim() || null;
+      Object.keys(updatesWithoutDepts).forEach(key => {
+        if (updatesWithoutDepts[key] !== undefined) {
+          if (typeof updatesWithoutDepts[key] === 'string' && key !== 'gender') {
+            cleanUpdates[key] = updatesWithoutDepts[key].trim() || null;
           } else {
-            cleanUpdates[key] = updates[key];
+            cleanUpdates[key] = updatesWithoutDepts[key];
           }
         }
       });
+
+      // Si vienen dept_assignments, actualizar departamento primario en students también
+      if (dept_assignments?.length > 0) {
+        const primary = dept_assignments[0];
+        cleanUpdates.department_id = primary.department_id || null;
+        cleanUpdates.assigned_class = primary.assigned_class || null;
+      }
 
       const { data, error } = await supabase
         .from('students')
@@ -543,6 +596,22 @@ id,
             .eq('profile_id', data.profile_id)
             .eq('company_id', req.companyId)
             .neq('id', id); // No actualizar el que acabamos de cambiar
+        }
+      }
+
+      // Sincronizar junction table si se enviaron dept_assignments
+      if (dept_assignments !== undefined) {
+        // Eliminar asignaciones anteriores y reemplazar
+        await supabase.from('student_departments').delete().eq('student_id', id).eq('company_id', req.companyId);
+        if (dept_assignments?.length > 0) {
+          const junctionRows = dept_assignments.map(a => ({
+            student_id: id,
+            department_id: a.department_id,
+            assigned_class: a.assigned_class || null,
+            role_in_dept: a.role_in_dept || 'alumno',
+            company_id: req.companyId
+          }));
+          await supabase.from('student_departments').upsert(junctionRows, { onConflict: 'student_id,department_id' });
         }
       }
 
@@ -600,6 +669,44 @@ id,
         success: true,
         message: 'Estudiante eliminado exitosamente'
       });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // POST /api/students/:id/departments
+  addDepartment: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { department_id, assigned_class, role_in_dept = 'alumno' } = req.body;
+      if (!department_id) return res.status(400).json({ success: false, message: 'department_id requerido' });
+
+      const { data, error } = await supabase
+        .from('student_departments')
+        .upsert({ student_id: id, department_id, assigned_class: assigned_class || null, role_in_dept, company_id: req.companyId }, { onConflict: 'student_id,department_id' })
+        .select('*, departments(id, name, classes)')
+        .single();
+
+      if (error) throw error;
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // DELETE /api/students/:id/departments/:deptId
+  removeDepartment: async (req, res, next) => {
+    try {
+      const { id, deptId } = req.params;
+      const { error } = await supabase
+        .from('student_departments')
+        .delete()
+        .eq('student_id', id)
+        .eq('department_id', deptId)
+        .eq('company_id', req.companyId);
+
+      if (error) throw error;
+      res.json({ success: true });
     } catch (error) {
       next(error);
     }

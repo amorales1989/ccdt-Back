@@ -504,6 +504,40 @@ const eventsController = {
         console.error('[CCDT] FCM Response Error:', fcmError.message);
       }
 
+      // ✅ Notificar a roles adicionales configurados (eventos_aprobados)
+      if (isApproved) {
+        try {
+          const { data: companyConfig } = await supabaseAdmin
+            .from('companies')
+            .select('notification_settings')
+            .eq('id', req.companyId)
+            .single();
+
+          const extraRoles = companyConfig?.notification_settings?.eventos_aprobados || [];
+
+          if (extraRoles.length > 0) {
+            // Obtener tokens de todos los roles configurados en una sola query
+            const { data: extraTokens } = await supabaseAdmin
+              .from('usuarios_tokens_fcm')
+              .select('token')
+              .in('role', extraRoles)
+              .eq('company_id', req.companyId)
+              .eq('activo', true);
+
+            if (extraTokens && extraTokens.length > 0) {
+              await NotificationService.enviarMultiple(
+                extraTokens.map(r => r.token),
+                { titulo: `✅ Evento aprobado: ${eventTitle}`, cuerpo: `Solicitud de ${requesterName} para el ${adjustedDateForN8n} aprobada.` },
+                { tipo: 'evento_aprobado', eventTitle, department: department || '' },
+                '/events'
+              );
+            }
+          }
+        } catch (extraNotifError) {
+          console.error('[CCDT] Error notificando roles adicionales:', extraNotifError.message);
+        }
+      }
+
       // ✅ Enviar notificación WhatsApp al solicitante
       try {
         if (solicitante_id) {
