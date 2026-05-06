@@ -11,7 +11,7 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
     }
 });
 
-const INACTIVITY_LIMIT_MS = 10 * 60 * 1000; // 10 minutes
+const INACTIVITY_LIMIT_MS = 60 * 60 * 1000; // 60 minutes
 
 const authMiddleware = async (req, res, next) => {
     try {
@@ -52,7 +52,7 @@ const authMiddleware = async (req, res, next) => {
             const iat = payload.iat * 1000;
             const tokenAgeMs = now.getTime() - iat;
 
-            if (tokenAgeMs < 60 * 1000) {
+            if (tokenAgeMs < 5 * 60 * 1000) {
                 isFreshLogin = true;
             }
         } catch (e) {

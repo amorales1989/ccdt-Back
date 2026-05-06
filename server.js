@@ -197,6 +197,11 @@ if (staffReportsRoutes) {
 }
 
 
+// Heartbeat — solo actualiza last_active_at para mantener la sesión viva
+app.post('/api/heartbeat', authMiddleware, (req, res) => {
+  res.json({ success: true });
+});
+
 // Middleware de manejo de errores (debe ir al final)
 app.use(notFound);
 app.use(errorHandler);
