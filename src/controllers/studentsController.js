@@ -30,7 +30,7 @@ const studentsController = {
         .is('deleted_at', null)
         .eq('company_id', req.companyId);
 
-      // Cuando se filtra por departamento, usar la junction table
+      // Cuando se filtra por departamento, usar junction table Y dept primario
       let deptClassMap = {}; // student_id -> assigned_class para ese depto
       if (department_id) {
         let jq = supabase
@@ -44,11 +44,29 @@ const studentsController = {
         }
 
         const { data: junctionRows } = await jq;
-        const studentIds = junctionRows?.map(r => r.student_id) || [];
+        const junctionIds = junctionRows?.map(r => r.student_id) || [];
         junctionRows?.forEach(r => { deptClassMap[r.student_id] = r.assigned_class; });
 
-        if (studentIds.length === 0) {
-          // No hay miembros en ese departamento/clase — revisar autorizados de todas formas
+        // También incluir alumnos cuyo dept primario sea este departamento
+        let primaryQuery = supabase
+          .from('students')
+          .select('id, assigned_class')
+          .eq('department_id', department_id)
+          .eq('company_id', req.companyId)
+          .is('deleted_at', null);
+        if (assigned_class && assigned_class !== 'all') {
+          primaryQuery = primaryQuery.ilike('assigned_class', assigned_class);
+        }
+        const { data: primaryRows } = await primaryQuery;
+        (primaryRows || []).forEach(r => {
+          if (!deptClassMap[r.id]) deptClassMap[r.id] = r.assigned_class;
+        });
+        const primaryIds = (primaryRows || []).map(r => r.id);
+
+        const allIds = [...new Set([...junctionIds, ...primaryIds])];
+
+        if (allIds.length === 0) {
+          // No hay miembros — revisar autorizados de todas formas
           let students = [];
           if (assigned_class && assigned_class !== 'all') {
             const { data: authorizedData } = await supabase
@@ -65,7 +83,7 @@ const studentsController = {
           return res.json({ success: true, data: students, count: students.length });
         }
 
-        query = query.in('id', studentIds);
+        query = query.in('id', allIds);
       }
 
       // Filtros adicionales (no se aplica assigned_class sobre students cuando hay dept_id)
