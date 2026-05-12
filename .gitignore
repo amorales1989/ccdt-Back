@@ -4,3 +4,4 @@ config/serviceAccountKey.json
 auth_info_baileys/
 auth/
 
+*.sql
