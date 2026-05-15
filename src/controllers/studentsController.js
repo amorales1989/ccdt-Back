@@ -288,7 +288,8 @@ id,
         document_number,
         nuevo,
         profile_id,
-        person_source
+        person_source,
+        existing_student_id
       } = req.body;
 
       // Validaciones básicas
@@ -324,6 +325,49 @@ id,
       const primaryDept = dept_assignments?.[0];
       const primaryDeptId = primaryDept?.department_id || department_id || null;
       const primaryClass = primaryDept?.assigned_class ?? assigned_class ?? null;
+
+      // Si la persona ya existe como student, reutilizar registro y solo agregar nueva asignación
+      if (existing_student_id) {
+        const { data: existing, error: fetchErr } = await supabase
+          .from('students')
+          .select('*, departments(name)')
+          .eq('id', existing_student_id)
+          .eq('company_id', req.companyId)
+          .is('deleted_at', null)
+          .maybeSingle();
+
+        if (fetchErr) throw fetchErr;
+        if (!existing) {
+          const err = new Error('El miembro existente no fue encontrado');
+          err.status = 404;
+          throw err;
+        }
+
+        const assignmentsToAdd = dept_assignments?.length
+          ? dept_assignments
+          : primaryDeptId
+            ? [{ department_id: primaryDeptId, assigned_class: primaryClass, role_in_dept: 'alumno' }]
+            : [];
+
+        if (assignmentsToAdd.length > 0) {
+          const junctionRows = assignmentsToAdd.map(a => ({
+            student_id: existing.id,
+            department_id: a.department_id,
+            assigned_class: a.assigned_class || null,
+            role_in_dept: a.role_in_dept || 'alumno',
+            company_id: req.companyId
+          }));
+          await supabase
+            .from('student_departments')
+            .upsert(junctionRows, { onConflict: 'student_id,department_id,role_in_dept' });
+        }
+
+        return res.status(200).json({
+          success: true,
+          message: 'Miembro existente vinculado al nuevo departamento',
+          data: { ...existing, department: existing.departments?.name || existing.department, is_deleted: false }
+        });
+      }
 
       const studentData = {
         first_name: first_name.trim(),
