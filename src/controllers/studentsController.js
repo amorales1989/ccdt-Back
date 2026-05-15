@@ -364,7 +364,7 @@ id,
           role_in_dept: a.role_in_dept || 'alumno',
           company_id: req.companyId
         }));
-        await supabase.from('student_departments').upsert(junctionRows, { onConflict: 'student_id,department_id' });
+        await supabase.from('student_departments').upsert(junctionRows, { onConflict: 'student_id,department_id,role_in_dept' });
       }
 
       res.status(201).json({
@@ -490,7 +490,7 @@ id,
             role_in_dept: a.role_in_dept || 'alumno',
             company_id: req.companyId
           }));
-          await supabase.from('student_departments').upsert(junctionRows, { onConflict: 'student_id,department_id' });
+          await supabase.from('student_departments').upsert(junctionRows, { onConflict: 'student_id,department_id,role_in_dept' });
         }
       }
 
@@ -562,7 +562,7 @@ id,
 
       const { data, error } = await supabase
         .from('student_departments')
-        .upsert({ student_id: id, department_id, assigned_class: assigned_class || null, role_in_dept, company_id: req.companyId }, { onConflict: 'student_id,department_id' })
+        .upsert({ student_id: id, department_id, assigned_class: assigned_class || null, role_in_dept, company_id: req.companyId }, { onConflict: 'student_id,department_id,role_in_dept' })
         .select('*, departments(id, name, classes)')
         .single();
 
