@@ -78,6 +78,13 @@ try {
   console.error('❌ Error loading staff reports routes:', error.message);
 }
 
+let toursRoutes;
+try {
+  toursRoutes = require('./src/routes/toursRoutes');
+} catch (error) {
+  console.error('❌ Error loading tours routes:', error.message);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -194,6 +201,10 @@ if (maintenanceRoutes) {
 
 if (staffReportsRoutes) {
   app.use('/api/staff-reports', authMiddleware, staffReportsRoutes);
+}
+
+if (toursRoutes) {
+  app.use('/api/tours', authMiddleware, toursRoutes);
 }
 
 
