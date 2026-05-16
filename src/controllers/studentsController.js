@@ -554,15 +554,17 @@ id,
     }
   },
 
-  // DELETE /api/students/:id - Soft delete
+  // DELETE /api/students/:id - Soft delete completo o solo desvincular de un departamento
+  // Query opcional: ?department_id=XXX -> si el miembro pertenece a >1 depto, solo desvincula ese
   delete: async (req, res, next) => {
     try {
       const { id } = req.params;
+      const { department_id: fromDeptId } = req.query;
 
       // Verificar que el estudiante existe y no está eliminado
       const { data: existingStudent, error: fetchError } = await supabase
         .from('students')
-        .select('id')
+        .select('id, department_id, assigned_class')
         .eq('id', id)
         .is('deleted_at', null)
         .eq('company_id', req.companyId)
@@ -577,7 +579,61 @@ id,
         throw fetchError;
       }
 
-      // Soft delete: marcar como eliminado
+      // Obtener departamentos extra del miembro
+      const { data: extras, error: extrasError } = await supabase
+        .from('student_departments')
+        .select('department_id, assigned_class')
+        .eq('student_id', id)
+        .eq('company_id', req.companyId);
+      if (extrasError) throw extrasError;
+
+      // Conjunto único de todos los department_id del miembro (primario + extras)
+      const allDeptIds = new Set();
+      if (existingStudent.department_id) allDeptIds.add(existingStudent.department_id);
+      (extras || []).forEach((e) => { if (e.department_id) allDeptIds.add(e.department_id); });
+
+      const totalDepts = allDeptIds.size;
+
+      // Si se pasó department_id y el miembro está en más de 1, solo desvincular ese
+      if (fromDeptId && totalDepts > 1 && allDeptIds.has(fromDeptId)) {
+        if (fromDeptId === existingStudent.department_id) {
+          // Promover un extra a primario
+          const promote = (extras || []).find((e) => e.department_id && e.department_id !== fromDeptId);
+          if (promote) {
+            const { error: updErr } = await supabase
+              .from('students')
+              .update({ department_id: promote.department_id, assigned_class: promote.assigned_class || null })
+              .eq('id', id)
+              .eq('company_id', req.companyId);
+            if (updErr) throw updErr;
+
+            const { error: delErr } = await supabase
+              .from('student_departments')
+              .delete()
+              .eq('student_id', id)
+              .eq('department_id', promote.department_id)
+              .eq('company_id', req.companyId);
+            if (delErr) throw delErr;
+          }
+        } else {
+          // Solo borrar la fila de student_departments del depto indicado
+          const { error: delErr } = await supabase
+            .from('student_departments')
+            .delete()
+            .eq('student_id', id)
+            .eq('department_id', fromDeptId)
+            .eq('company_id', req.companyId);
+          if (delErr) throw delErr;
+        }
+
+        return res.json({
+          success: true,
+          message: 'Miembro desvinculado del departamento',
+          unlinked: true
+        });
+      }
+
+      // Caso default: soft delete completo (1 solo depto o no se pasó department_id)
       const { error } = await supabase
         .from('students')
         .update({ deleted_at: new Date().toISOString() })
@@ -590,7 +646,8 @@ id,
 
       res.json({
         success: true,
-        message: 'Estudiante eliminado exitosamente'
+        message: 'Estudiante eliminado exitosamente',
+        unlinked: false
       });
     } catch (error) {
       next(error);
