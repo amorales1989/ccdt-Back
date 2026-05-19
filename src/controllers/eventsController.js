@@ -360,26 +360,22 @@ const eventsController = {
 
         const baseWaText = `🆕 *Nueva Solicitud de Evento*\n\n*Evento:* ${eventTitle}\n*Fecha:* ${adjustedDateForN8n}\n*Hora:* ${eventTime || 'N/A'}\n*Departamento:* ${department || 'General'}\n*Solicitante:* ${requesterName}\n\n`;
 
-        // 1. Enviar informe al administrador principal (hardcodeado)
+        // Unificar admin + secretarias en una sola cola con delay 15-30s entre envíos
         const adminPhone = '1159080306';
-        const adminWaText = baseWaText + `*Descripción:* ${description || 'Sin descripción'}\n\n_Accede al panel para revisarla._`;
-        try {
-          await WhatsAppService.sendMessage(req.companyId, adminPhone, adminWaText);
-          console.log(`✅ Alerta de nueva solicitud enviada al administrador principal (${adminPhone}).`);
-        } catch (err) {
-          console.error('[CCDT] Error enviando WA al admin principal:', err.message);
-        }
+        const adminWaText = baseWaText + `*Descripción:* ${description || 'Sin descripción'}\n\n_Mensaje automático de CCDT_`;
+        const secWaText = baseWaText + `_Mensaje automático de CCDT_`;
 
-        // 2. Enviar a secretarias
+        const waQueue = [{ phone: adminPhone, message: adminWaText, name: 'Admin principal' }];
         if (secretaries && secretaries.length > 0) {
-          const secWaText = baseWaText + `_Accede al panel administrativo para responder._`;
-
           for (const sec of secretaries) {
-            if (sec.phone) {
-              await WhatsAppService.sendMessage(req.companyId, sec.phone, secWaText);
-            }
+            if (sec.phone) waQueue.push({ phone: sec.phone, message: secWaText, name: sec.first_name || 'Secretaria' });
           }
         }
+
+        // Fire-and-forget para no bloquear la respuesta HTTP
+        WhatsAppService.sendBulkMessages(req.companyId, waQueue)
+          .then(r => console.log(`✅ Alertas de nueva solicitud enviadas. Enviados: ${r.sent}, Fallidos: ${r.failed}.`))
+          .catch(err => console.error('[CCDT] Error enviando cola WA nueva solicitud:', err.message));
       } catch (waError) {
         console.error('[CCDT] WA Secretary Error:', waError.message);
       }
@@ -607,58 +603,13 @@ const eventsController = {
         });
       }
 
-      console.log(`🔄 Buscando líderes, maestros y directores para notificar nuevo evento...`);
-      const { data: profiles, error: profError } = await supabaseAdmin
-        .from('profiles')
-        .select('first_name, phone')
-        .in('role', ['lider', 'maestro', 'director'])
-        .eq('company_id', req.companyId)
-        .not('phone', 'is', null);
-
-      if (profError) throw profError;
-
-      if (profiles && profiles.length > 0) {
-        const formattedDate = formatDateToDDMMYYYY(eventDate);
-        const waText = `✅ *Nuevo Evento Aprobado*\n\n*Evento:* ${eventTitle}\n*Fecha:* ${formattedDate}\n*Descripción:* ${description || 'Sin descripción detallada.'}\n\n_Accede al calendario para más detalles._`;
-
-        console.log(`📤 Enviando WhatsApp a ${profiles.length} usuarios...`);
-        let countSent = 0;
-        let countFailed = 0;
-
-        // Enviar mensajes limitando fallos individuales
-        await Promise.allSettled(
-          profiles.map(async (profile) => {
-            if (profile.phone && profile.phone.trim() !== '') {
-              try {
-                // Logueamos a consola para registro, y ejecutamos WhatsApp
-                console.log(`[PRODUCCIÓN] Mandando WhatsApp a ${profile.first_name} (${profile.phone}) para evento: "${eventTitle}"`);
-                await WhatsAppService.sendMessage(req.companyId, profile.phone, waText);
-                countSent++;
-              } catch (waErr) {
-                console.error(`❌ Fallo al enviar WhatsApp masivo a ${profile.phone}:`, waErr.message);
-                countFailed++;
-              }
-            }
-          })
-        );
-
-        console.log(`✅ Notificación masiva finalizada. Enviados: ${countSent}, Fallidos: ${countFailed}.`);
-
-        return res.status(200).json({
-          success: true,
-          message: 'Notificación masiva procesada',
-          data: {
-            sent: countSent,
-            failed: countFailed,
-            totalTargets: profiles.length
-          }
-        });
-      } else {
-        return res.status(200).json({
-          success: true,
-          message: 'No se encontraron destinatarios con roles pertinentes y teléfono registrado'
-        });
-      }
+      // Envío WhatsApp manejado por el DB-webhook (webhookController.handleEventWebhook).
+      // Este endpoint queda como no-op para evitar duplicados.
+      console.log(`ℹ️ notifyMassiveApprovedEvent: WA delegado al DB-webhook — no se envía desde acá. Evento: ${eventTitle}`);
+      return res.status(200).json({
+        success: true,
+        message: 'Notificación masiva manejada por el DB-webhook (no enviada desde este endpoint)'
+      });
     } catch (error) {
       console.error('❌ Error en notifyMassiveApprovedEvent:', error);
 

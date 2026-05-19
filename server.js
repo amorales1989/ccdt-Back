@@ -85,6 +85,19 @@ try {
   console.error('❌ Error loading tours routes:', error.message);
 }
 
+let notificationsRoutes, profilesRoutes;
+try {
+  notificationsRoutes = require('./src/routes/notificationsRoutes');
+} catch (error) {
+  console.error('❌ Error loading notifications routes:', error.message);
+}
+
+try {
+  profilesRoutes = require('./src/routes/profilesRoutes');
+} catch (error) {
+  console.error('❌ Error loading profiles routes:', error.message);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -205,6 +218,14 @@ if (staffReportsRoutes) {
 
 if (toursRoutes) {
   app.use('/api/tours', authMiddleware, toursRoutes);
+}
+
+if (notificationsRoutes) {
+  app.use('/api/notifications', authMiddleware, notificationsRoutes);
+}
+
+if (profilesRoutes) {
+  app.use('/api/profiles', authMiddleware, profilesRoutes);
 }
 
 

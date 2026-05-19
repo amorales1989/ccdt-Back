@@ -60,6 +60,7 @@ class BirthdayService {
             });
 
             const notificationsSent = [];
+            const waQueue = []; // Acumulamos envíos de WhatsApp para mandarlos secuencialmente con delay al final
 
             // 3. Notificar líderes por departamento
             for (const deptId in studentsByDept) {
@@ -129,31 +130,36 @@ class BirthdayService {
                             type: 'fcm'
                         });
 
-                        // B. Notificación WhatsApp (Baileys)
+                        // B. Notificación WhatsApp (Baileys) — encolar para envío secuencial con delay
                         if (leader.phone) {
-                            console.log(`📤 [BirthdayService] Intentando enviar WhatsApp a ${leader.first_name} (${leader.phone})...`);
                             const waText = `🎂 *¡Cumpleaños en ${deptName}!* 🎂\n\n${body}\n\n_Enviado automáticamente por CCDT Bot_`;
-
-                            const waResult = await WhatsAppService.sendMessage(companyId || 1, leader.phone, waText);
-
-                            if (waResult) {
-                                console.log(`✅ [BirthdayService] WhatsApp enviado a ${leader.first_name}`);
-                            } else {
-                                console.warn(`⚠️ [BirthdayService] Falló envío WhatsApp a ${leader.first_name}`);
-                            }
-
-                            notificationsSent.push({
+                            waQueue.push({
+                                phone: leader.phone,
+                                message: waText,
+                                name: leader.first_name,
                                 leaderId: leader.id,
-                                leaderName: leader.first_name,
                                 dept: deptName,
-                                success: waResult,
-                                type: 'whatsapp'
                             });
                         }
                     } catch (notifyError) {
                         console.error(`❌ [BirthdayService] Error notificando al líder ${leader.id}:`, notifyError.message);
                     }
                 }
+            }
+
+            // Procesar cola de WhatsApp con delay aleatorio 15-30s entre envíos (evita bloqueos por spam)
+            if (waQueue.length > 0) {
+                console.log(`📤 [BirthdayService] Enviando ${waQueue.length} WhatsApp de cumpleaños con delay 15-30s...`);
+                const waResults = await WhatsAppService.sendBulkMessages(companyId || 1, waQueue);
+                waQueue.forEach((item, i) => {
+                    notificationsSent.push({
+                        leaderId: item.leaderId,
+                        leaderName: item.name,
+                        dept: item.dept,
+                        success: i < waResults.sent,
+                        type: 'whatsapp'
+                    });
+                });
             }
 
             return {

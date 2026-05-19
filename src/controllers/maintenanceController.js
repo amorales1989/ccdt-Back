@@ -31,7 +31,7 @@ const maintenanceController = {
             }[String(priority).toLowerCase()] || '🟡 Normal';
 
             const baseWaText = `🔧 *Nueva Solicitud de Mantenimiento*\n\n*Asunto:* ${title}\n*Ubicación:* ${location || '📍 No especificada'}\n*Solicitante:* ${requesterName}\n*Prioridad:* ${priorityEmoji}\n\n`;
-            const fullWaText = baseWaText + `*Descripción:* ${description || 'Sin descripción'}\n\n_Accede al panel administrativo para más detalles._`;
+            const fullWaText = baseWaText + `*Descripción:* ${description || 'Sin descripción'}\n\n_Mensaje automático de CCDT_`;
 
             // Leer roles configurados para notificaciones de mantenimiento
             const { data: companyConfig } = await supabaseAdmin
@@ -72,12 +72,14 @@ const maintenanceController = {
 
                 if (secError) throw secError;
 
-                console.log(`📤 Enviando WhatsApp a ${profiles?.length || 0} destinatarios...`);
-                for (const profile of (profiles || [])) {
-                    if (profile.phone) {
-                        await WhatsAppService.sendMessage(companyId, profile.phone, fullWaText);
-                    }
-                }
+                console.log(`📤 Encolando WhatsApp a ${profiles?.length || 0} destinatarios (delay 15-30s entre envíos)...`);
+                const recipients = (profiles || [])
+                    .filter(p => p.phone)
+                    .map(p => ({ phone: p.phone, name: p.first_name }));
+                // Fire-and-forget para no bloquear la respuesta HTTP
+                WhatsAppService.sendBulkMessages(companyId, recipients, fullWaText)
+                    .then(r => console.log(`✅ Mantenimiento WA finalizado. Enviados: ${r.sent}, Fallidos: ${r.failed}.`))
+                    .catch(err => console.error('❌ Error en envío masivo WA mantenimiento:', err.message));
             } catch (waError) {
                 console.error('[Mantenimiento] WhatsApp Error:', waError.message);
             }

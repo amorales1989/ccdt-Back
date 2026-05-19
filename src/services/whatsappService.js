@@ -210,6 +210,42 @@ class WhatsAppService {
         return { success: true };
     }
 
+    /**
+     * Envía el mismo mensaje a múltiples destinatarios de forma secuencial,
+     * con un delay aleatorio entre 15s y 30s entre cada envío para evitar bloqueos por spam.
+     * @param {number} companyId
+     * @param {Array<{phone: string, message?: string, name?: string}>} recipients - lista de destinatarios. Si message no se provee, usa el default.
+     * @param {string} [defaultMessage] - mensaje a usar si el recipient no trae uno propio.
+     * @returns {Promise<{sent: number, failed: number, errors: Array}>}
+     */
+    async sendBulkMessages(companyId, recipients, defaultMessage) {
+        const results = { sent: 0, failed: 0, errors: [] };
+        const list = (recipients || []).filter(r => r && r.phone && String(r.phone).trim() !== '');
+
+        for (let i = 0; i < list.length; i++) {
+            const r = list[i];
+            const text = r.message || defaultMessage;
+            try {
+                await this.sendMessage(companyId, r.phone, text);
+                results.sent++;
+                console.log(`✅ [Bulk WA] ${i + 1}/${list.length} enviado a ${r.name || r.phone}`);
+            } catch (err) {
+                results.failed++;
+                results.errors.push({ phone: r.phone, error: err.message });
+                console.error(`❌ [Bulk WA] ${i + 1}/${list.length} falló a ${r.phone}: ${err.message}`);
+            }
+
+            // Delay aleatorio 15-30s entre mensajes (no después del último)
+            if (i < list.length - 1) {
+                const delayMs = Math.floor(Math.random() * (30000 - 15000 + 1)) + 15000;
+                console.log(`⏳ [Bulk WA] Esperando ${(delayMs / 1000).toFixed(1)}s antes del siguiente envío...`);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
+        }
+
+        return results;
+    }
+
     getStatus(companyId) {
         const sock = this.sessions.get(companyId);
         return sock ? 'connected' : 'disconnected';

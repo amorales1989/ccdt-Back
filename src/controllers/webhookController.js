@@ -90,7 +90,7 @@ const webhookController = {
                 const time = record.time ? `\n⏰ *Hora:* ${record.time}` : '';
                 const desc = record.description ? `\n📝 *Descripción:* ${record.description}` : '';
 
-                const broadcastMessage = `${header}\n\n📌 *Título:* ${record.title}\n📅 *Fecha:* ${formattedDate}${time}${desc}\n\n_Accede a la app para más detalles._`;
+                const broadcastMessage = `${header}\n\n📌 *Título:* ${record.title}\n📅 *Fecha:* ${formattedDate}${time}${desc}\n\n_Mensaje automático de CCDT_`;
 
                 console.log(`🚀 Iniciando difusión de evento: ${record.title}`);
 
@@ -146,25 +146,49 @@ const webhookController = {
  */
 async function broadcastToAll(message, companyId) {
     try {
+        // Leer roles configurados para notificación de eventos aprobados
+        const { data: companyConfig } = await supabase
+            .from('companies')
+            .select('notification_settings')
+            .eq('id', companyId)
+            .single();
+        const configuredRoles = companyConfig?.notification_settings?.eventos_aprobados || ['director', 'vicedirector'];
+
+        if (!configuredRoles.length) {
+            console.log('⚠️ No hay roles configurados para eventos_aprobados — no se envía nada.');
+            return;
+        }
+
+        // Traer todos los profiles de la company (filtramos en JS para considerar role primario, roles[] y assignments[])
         const { data: profiles, error } = await supabase
             .from('profiles')
-            .select('first_name, phone')
+            .select('id, first_name, phone, role, roles, assignments')
             .eq('company_id', companyId)
             .not('phone', 'is', null);
 
         if (error) throw error;
         if (!profiles || profiles.length === 0) return;
 
-        console.log(`👥 Difundiendo mensaje a ${profiles.length} usuarios...`);
+        const wantedSet = new Set(configuredRoles);
+        const matchesRole = (p) => {
+            if (p.role && wantedSet.has(p.role)) return true;
+            if (Array.isArray(p.roles) && p.roles.some(r => wantedSet.has(r))) return true;
+            if (Array.isArray(p.assignments) && p.assignments.some(a => a && a.role && wantedSet.has(a.role))) return true;
+            return false;
+        };
 
-        for (const profile of profiles) {
-            if (profile.phone) {
-                await WhatsAppService.sendMessage(companyId, profile.phone, message);
-                // Delay aleatorio entre 2-4 segundos
-                await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 2000));
-            }
+        const recipients = profiles
+            .filter(p => p.phone && String(p.phone).trim() !== '' && matchesRole(p))
+            .map(p => ({ phone: p.phone, name: p.first_name }));
+
+        if (recipients.length === 0) {
+            console.log('⚠️ Ningún profile coincide con los roles configurados.');
+            return;
         }
-        console.log('🏁 Difusión masiva completada.');
+
+        console.log(`👥 Difundiendo a ${recipients.length} usuarios (roles: ${configuredRoles.join(', ')}, delay 15-30s)...`);
+        const result = await WhatsAppService.sendBulkMessages(companyId, recipients, message);
+        console.log(`🏁 Difusión masiva completada. Enviados: ${result.sent}, Fallidos: ${result.failed}.`);
     } catch (err) {
         console.error('❌ Error en difusión masiva:', err.message);
     }

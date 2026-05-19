@@ -194,15 +194,10 @@ const initScheduledJobs = () => {
 
                     message += `_Por favor, ingresa al panel de control para revisarlas._`;
 
-                    // Enviar a todos los destinatarios usando el WhatsApp de LA EMPRESA
-                    for (const phone of recipients) {
-                        try {
-                            await WhatsAppService.sendMessage(companyId, phone, message);
-                            console.log(`✅ [Cron Job] Alerta enviada a ${phone} (Empresa ${companyId}).`);
-                        } catch (sendError) {
-                            console.log(`❌ [Cron Job] Error enviando a ${phone} (Empresa ${companyId}):`, sendError.message);
-                        }
-                    }
+                    // Enviar a todos los destinatarios usando el WhatsApp de LA EMPRESA, con delay 15-30s entre envíos
+                    const bulkRecipients = recipients.map(phone => ({ phone }));
+                    const bulkResult = await WhatsAppService.sendBulkMessages(companyId, bulkRecipients, message);
+                    console.log(`✅ [Cron Job] Alertas finalizadas en Empresa ${companyId}. Enviados: ${bulkResult.sent}, Fallidos: ${bulkResult.failed}.`);
                 }
             }
         } catch (error) {
