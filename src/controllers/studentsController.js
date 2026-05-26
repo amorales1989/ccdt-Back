@@ -519,6 +519,13 @@ id,
             .eq('profile_id', data.profile_id)
             .eq('company_id', req.companyId)
             .neq('id', id); // No actualizar el que acabamos de cambiar
+
+          // El SP get_students lee los datos personales desde profiles (COALESCE(p.x, s.x)),
+          // así que hay que actualizar el profile o los cambios no se reflejan en la lista.
+          await supabase
+            .from('profiles')
+            .update(syncUpdates)
+            .eq('id', data.profile_id);
         }
       }
 

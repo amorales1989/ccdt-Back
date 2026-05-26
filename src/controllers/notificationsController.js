@@ -3,7 +3,7 @@ const NotificationService = require('../services/notificationService');
 const WhatsAppService = require('../services/whatsappService');
 
 const ALLOWED_ROLES = ['admin', 'secretaria'];
-const STAFF_ROLES = ['lider', 'maestro', 'colaborador', 'ayudante', 'director', 'vicedirector'];
+const STAFF_ROLES = ['lider', 'maestro', 'colaborador', 'auxiliar_maestro', 'director', 'vicedirector'];
 
 async function getRequesterRole(userId) {
   const { data, error } = await supabase
