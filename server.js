@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 require('dotenv').config();
+require('dotenv').config({ path: '.env.local', override: true });
 
 // Importar configuraciones y middleware
 const { testConnection } = require('./src/config/supabase');
