@@ -99,6 +99,13 @@ try {
   console.error('❌ Error loading profiles routes:', error.message);
 }
 
+let attendanceRoutes;
+try {
+  attendanceRoutes = require('./src/routes/attendanceRoutes');
+} catch (error) {
+  console.error('❌ Error loading attendance routes:', error.message);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -227,6 +234,10 @@ if (notificationsRoutes) {
 
 if (profilesRoutes) {
   app.use('/api/profiles', authMiddleware, profilesRoutes);
+}
+
+if (attendanceRoutes) {
+  app.use('/api/attendance', authMiddleware, attendanceRoutes);
 }
 
 
