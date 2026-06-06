@@ -62,7 +62,7 @@ const photoController = {
             // 1. Obtener la URL actual para extraer el path
             const { data: student, error: fetchError } = await supabaseAdmin
                 .from('students')
-                .select('photo_url')
+                .select('photo_url, profile_id')
                 .eq('id', id)
                 .eq('company_id', companyId)
                 .single();
@@ -92,6 +92,14 @@ const photoController = {
                 .eq('company_id', companyId);
 
             if (updateError) throw updateError;
+
+            // Si el miembro también es usuario, sincronizar profiles (ver uploadToSupabase).
+            if (student.profile_id) {
+                await supabaseAdmin
+                    .from('profiles')
+                    .update({ photo_url: null })
+                    .eq('id', student.profile_id);
+            }
 
             res.json({
                 success: true,
@@ -133,13 +141,24 @@ async function uploadToSupabase(buffer, studentId, companyId, res) {
             .getPublicUrl(path);
 
         // 4. Actualizar registro del estudiante
-        const { error: updateError } = await supabaseAdmin
+        const { data: updatedStudent, error: updateError } = await supabaseAdmin
             .from('students')
             .update({ photo_url: publicUrl })
             .eq('id', studentId)
-            .eq('company_id', companyId);
+            .eq('company_id', companyId)
+            .select('profile_id')
+            .single();
 
         if (updateError) throw updateError;
+
+        // Si el miembro también es usuario, el SP get_students lee COALESCE(profiles.photo_url, students.photo_url),
+        // así que hay que actualizar el profile o el cambio no se refleja en la lista.
+        if (updatedStudent?.profile_id) {
+            await supabaseAdmin
+                .from('profiles')
+                .update({ photo_url: publicUrl })
+                .eq('id', updatedStudent.profile_id);
+        }
 
         res.json({
             success: true,
