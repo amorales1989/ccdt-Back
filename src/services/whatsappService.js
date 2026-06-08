@@ -1,4 +1,5 @@
 const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const Sentry = require('@sentry/node');
 const { supabaseAdmin } = require('../config/supabase');
 const path = require('path');
 const fs = require('fs');
@@ -121,6 +122,11 @@ class WhatsAppService {
                         if (fs.existsSync(authFolder)) {
                             fs.rmSync(authFolder, { recursive: true, force: true });
                         }
+                        // El dispositivo fue desvinculado (logout desde el teléfono o sesión expirada).
+                        Sentry.captureMessage(
+                            `WhatsApp desvinculado en empresa ${companyId} — requiere re-escanear QR`,
+                            { level: 'error', tags: { service: 'whatsapp', event: 'logout', companyId: String(companyId) } }
+                        );
                     } else if (wasReplaced) {
                         console.log(`ℹ️ [WhatsApp] Sesión de empresa ${companyId} desplazada por una conexión más reciente.`);
                     }
@@ -132,6 +138,7 @@ class WhatsAppService {
 
         } catch (error) {
             console.error(`❌ [WhatsApp] Error conectando empresa ${companyId}:`, error);
+            Sentry.captureException(error, { tags: { service: 'whatsapp', event: 'connect-error', companyId: String(companyId) } });
             this.sessions.delete(companyId);
         }
     }

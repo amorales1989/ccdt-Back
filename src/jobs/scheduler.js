@@ -1,4 +1,5 @@
 const cron = require('node-cron');
+const Sentry = require('@sentry/node');
 const BirthdayService = require('../services/birthdayService');
 const WhatsAppService = require('../services/whatsappService');
 
@@ -21,6 +22,7 @@ const initScheduledJobs = () => {
             }
         } catch (error) {
             console.error('❌ [Cron Job] Error en ejecución de cumpleaños:', error);
+            Sentry.captureException(error, { tags: { job: 'cumpleanios' } });
         }
     }, {
         scheduled: true,
@@ -49,6 +51,7 @@ const initScheduledJobs = () => {
             console.log('✅ [Cron Job] Reportes matutinos enviados.');
         } catch (error) {
             console.error('❌ [Cron Job] Error en Reporte matutino:', error.message);
+            Sentry.captureException(error, { tags: { job: 'reporte-matutino' } });
         }
     }, {
         scheduled: true,
@@ -77,6 +80,7 @@ const initScheduledJobs = () => {
             console.log('✅ [Cron Job] Reportes nocturnos enviados.');
         } catch (error) {
             console.error('❌ [Cron Job] Error en Reporte nocturno:', error.message);
+            Sentry.captureException(error, { tags: { job: 'reporte-nocturno' } });
         }
     }, {
         scheduled: true,
@@ -202,6 +206,7 @@ const initScheduledJobs = () => {
             }
         } catch (error) {
             console.error('❌ [Cron Job] Error crítico en alertas de solicitudes:', error.message);
+            Sentry.captureException(error, { tags: { job: 'solicitudes-pendientes' } });
         }
     }, {
         scheduled: true,

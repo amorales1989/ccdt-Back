@@ -1,3 +1,7 @@
+// IMPORTANTE: inicializa Sentry antes que cualquier otro módulo.
+require('./instrument.js');
+const Sentry = require('@sentry/node');
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -246,6 +250,9 @@ app.post('/api/heartbeat', authMiddleware, (req, res) => {
   res.json({ success: true });
 });
 
+// Sentry: captura los errores que llegan a Express (antes de los handlers propios).
+Sentry.setupExpressErrorHandler(app);
+
 // Middleware de manejo de errores (debe ir al final)
 app.use(notFound);
 app.use(errorHandler);
@@ -271,13 +278,17 @@ const startServer = async () => {
 };
 
 // Manejo de errores no capturados
-process.on('unhandledRejection', (err) => {
-  console.error('❌ Unhandled Promise Rejection:', err.message);
+process.on('unhandledRejection', async (err) => {
+  console.error('❌ Unhandled Promise Rejection:', err?.message);
+  Sentry.captureException(err);
+  await Sentry.flush(2000);
   process.exit(1);
 });
 
-process.on('uncaughtException', (err) => {
-  console.error('❌ Uncaught Exception:', err.message);
+process.on('uncaughtException', async (err) => {
+  console.error('❌ Uncaught Exception:', err?.message);
+  Sentry.captureException(err);
+  await Sentry.flush(2000);
   process.exit(1);
 });
 
