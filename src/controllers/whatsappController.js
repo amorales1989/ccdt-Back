@@ -77,6 +77,16 @@ const whatsappController = {
         } catch (error) {
             next(error);
         }
+    },
+
+    runBirthdayCron: async (req, res, next) => {
+        try {
+            const BirthdayService = require('../services/birthdayService');
+            const result = await BirthdayService.checkDailyBirthdays(req.companyId);
+            res.json({ success: true, message: 'Verificación de cumpleaños ejecutada', result });
+        } catch (error) {
+            next(error);
+        }
     }
 };
 

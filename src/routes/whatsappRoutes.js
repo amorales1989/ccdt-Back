@@ -6,5 +6,6 @@ router.get('/estado', whatsappController.getStatus);
 router.post('/conectar', whatsappController.connect);
 router.post('/desconectar', whatsappController.disconnect);
 router.post('/test', whatsappController.testMessage);
+router.post('/run-birthday-cron', whatsappController.runBirthdayCron);
 
 module.exports = router;
