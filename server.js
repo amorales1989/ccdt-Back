@@ -110,8 +110,16 @@ try {
   console.error('❌ Error loading attendance routes:', error.message);
 }
 
+let topicRecordsRoutes;
+try {
+  topicRecordsRoutes = require('./src/routes/topicRecordsRoutes');
+} catch (error) {
+  console.error('❌ Error loading topic records routes:', error.message);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
+const FALLBACK_PORT = 3002;
 
 // Middleware de seguridad (modificar helmet para CORS)
 app.use(helmet({
@@ -244,6 +252,9 @@ if (attendanceRoutes) {
   app.use('/api/attendance', authMiddleware, attendanceRoutes);
 }
 
+if (topicRecordsRoutes) {
+  app.use('/api/topic-records', authMiddleware, topicRecordsRoutes);
+}
 
 // Heartbeat — solo actualiza last_active_at para mantener la sesión viva
 app.post('/api/heartbeat', authMiddleware, (req, res) => {
@@ -263,13 +274,28 @@ const startServer = async () => {
     console.log('🔄 Probando conexión con Supabase...');
     await testConnection();
 
-    // Iniciar servidor
-    app.listen(PORT, () => {
+    // Iniciar servidor, con fallback si el puerto está ocupado
+    const server = app.listen(PORT, () => {
       console.log('🚀 Servidor iniciado exitosamente');
       console.log(`📍 URL: http://localhost:${PORT}`);
       console.log(`🌍 Entorno: ${process.env.NODE_ENV || 'development'}`);
       console.log(`📊 Base de datos: Supabase`);
       console.log('─'.repeat(50));
+    });
+
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.warn(`⚠️  Puerto ${PORT} ocupado, intentando con ${FALLBACK_PORT}...`);
+        app.listen(FALLBACK_PORT, () => {
+          console.log('🚀 Servidor iniciado exitosamente');
+          console.log(`📍 URL: http://localhost:${FALLBACK_PORT}`);
+          console.log(`🌍 Entorno: ${process.env.NODE_ENV || 'development'}`);
+          console.log(`📊 Base de datos: Supabase`);
+          console.log('─'.repeat(50));
+        });
+      } else {
+        throw err;
+      }
     });
   } catch (error) {
     console.error('❌ Error al iniciar el servidor:', error.message);
