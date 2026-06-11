@@ -13,15 +13,16 @@ const topicRecordsController = {
                 .order('fecha', { ascending: false });
 
             const isMaestro = user_role === 'maestro' || user_role === 'auxiliar_maestro';
-            const isDirector = user_role === 'director' || user_role === 'vicedirector';
-            const isAdmin = user_role === 'admin' || user_role === 'director_general' || user_role === 'secretaria';
+            const isDirectorLevel = user_role === 'director' || user_role === 'vicedirector' || user_role === 'director_general';
+            const isAdmin = user_role === 'admin' || user_role === 'secretaria';
 
             if (isMaestro) {
                 query = query.eq('created_by', user_id);
-            } else if (isDirector) {
+            } else if (isDirectorLevel || isAdmin) {
+                // directors: su dept_id viene del perfil (requerido para aislar); admins: filtros opcionales desde la UI
                 if (department_id) query = query.eq('department_id', department_id);
                 if (assigned_class) query = query.eq('assigned_class', assigned_class);
-            } else if (!isAdmin) {
+            } else {
                 return res.json({ success: true, data: [] });
             }
 
