@@ -81,12 +81,21 @@ const authMiddleware = async (req, res, next) => {
         req.user = user;
 
         // 4. Determinar companyId
-        // Priorizamos el company_id del perfil del usuario por seguridad
-        // Si el perfil no tiene company_id (no debería pasar), usamos el header o query param
+        // Seguridad multi-tenant: la congregación SIEMPRE se deriva del perfil del usuario.
+        // Nunca confiamos en un company_id provisto por el cliente (header/query).
         const profileCompanyId = profile?.company_id;
-        const headerCompanyId = req.headers['x-company-id'] || req.query.companyId;
+        const rawClientCompanyId = req.headers['x-company-id'] || req.query.companyId;
+        const clientCompanyId = rawClientCompanyId ? parseInt(rawClientCompanyId, 10) : null;
 
-        req.companyId = profileCompanyId || parseInt(headerCompanyId, 10);
+        if (profileCompanyId) {
+            if (clientCompanyId && clientCompanyId !== profileCompanyId) {
+                console.warn(`Intento de tenant spoofing: usuario ${user.id} (company ${profileCompanyId}) envió companyId ${clientCompanyId}`);
+            }
+            req.companyId = profileCompanyId;
+        } else {
+            // Solo como fallback si el perfil no tiene company_id (no debería pasar)
+            req.companyId = clientCompanyId;
+        }
 
         // Si aún no tenemos companyId, devolvemos error (evitamos default a 1)
         if (!req.companyId) {
