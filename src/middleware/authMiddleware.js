@@ -32,7 +32,7 @@ const authMiddleware = async (req, res, next) => {
         // 2. Verificar inactividad en el perfil
         const { data: profile, error: profileError } = await supabaseAdmin
             .from('profiles')
-            .select('last_active_at, company_id')
+            .select('last_active_at, company_id, role, departments, department_id')
             .eq('id', user.id)
             .single();
 
@@ -79,6 +79,14 @@ const authMiddleware = async (req, res, next) => {
 
         // Adjuntar usuario al request para uso posterior
         req.user = user;
+
+        // Perfil con rol y departamentos (fuente de verdad server-side para autorizacion).
+        // No confiar nunca en rol/departamentos provistos por el cliente.
+        req.profile = {
+            role: profile?.role || null,
+            departments: profile?.departments || [],
+            department_id: profile?.department_id || null
+        };
 
         // 4. Determinar companyId
         // Seguridad multi-tenant: la congregación SIEMPRE se deriva del perfil del usuario.

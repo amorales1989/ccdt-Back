@@ -110,6 +110,13 @@ try {
   console.error('❌ Error loading attendance routes:', error.message);
 }
 
+let accountingRoutes;
+try {
+  accountingRoutes = require('./src/routes/accountingRoutes');
+} catch (error) {
+  console.error('❌ Error loading accounting routes:', error.message);
+}
+
 let topicRecordsRoutes;
 try {
   topicRecordsRoutes = require('./src/routes/topicRecordsRoutes');
@@ -250,6 +257,10 @@ if (profilesRoutes) {
 
 if (attendanceRoutes) {
   app.use('/api/attendance', authMiddleware, attendanceRoutes);
+}
+
+if (accountingRoutes) {
+  app.use('/api/accounting', authMiddleware, accountingRoutes);
 }
 
 if (topicRecordsRoutes) {
