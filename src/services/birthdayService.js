@@ -45,37 +45,56 @@ class BirthdayService {
                 };
             }
 
-            // 2. Agrupar por departamento
-            const studentsByDept = {};
-            birthdayStudents.forEach(student => {
-                if (!student.department_id) return;
+            // 2. Traer departamentos secundarios (student_departments) de los cumpleañeros
+            const birthdayIds = birthdayStudents.map(s => s.id);
+            const { data: deptAssignments, error: assignError } = await supabase
+                .from('student_departments')
+                .select('student_id, department_id, assigned_class, departments(name)')
+                .in('student_id', birthdayIds)
+                .eq('company_id', companyId || 1);
 
-                if (!studentsByDept[student.department_id]) {
-                    studentsByDept[student.department_id] = {
-                        deptName: student.departments?.name,
-                        students: []
-                    };
+            if (assignError) {
+                console.error('❌ [BirthdayService] Error trayendo departamentos secundarios:', assignError.message);
+            }
+
+            // 3. Agrupar por departamento (primario + secundarios), guardando la clase de cada membresía
+            const studentsByDept = {};
+            const addMembership = (student, deptId, deptName, assignedClass) => {
+                if (!deptId) return;
+                if (!studentsByDept[deptId]) {
+                    studentsByDept[deptId] = { deptName, students: [], seen: new Set() };
                 }
-                studentsByDept[student.department_id].students.push(student);
+                if (studentsByDept[deptId].seen.has(student.id)) return;
+                studentsByDept[deptId].seen.add(student.id);
+                // assigned_class por membresía: en el dept secundario puede diferir del primario
+                studentsByDept[deptId].students.push({ ...student, assigned_class: assignedClass });
+            };
+
+            birthdayStudents.forEach(student => {
+                addMembership(student, student.department_id, student.departments?.name, student.assigned_class);
+            });
+            (deptAssignments || []).forEach(a => {
+                const student = birthdayStudents.find(s => s.id === a.student_id);
+                if (student) addMembership(student, a.department_id, a.departments?.name, a.assigned_class);
             });
 
             const notificationsSent = [];
             const waQueue = []; // Acumulamos envíos de WhatsApp para mandarlos secuencialmente con delay al final
 
-            // 3. Notificar líderes por departamento
+            // Leer roles configurados para notificaciones de cumpleaños (una vez)
+            const { data: companyData } = await supabase
+                .from('companies')
+                .select('notification_settings')
+                .eq('id', companyId || 1)
+                .single();
+            const birthdayRoles = companyData?.notification_settings?.cumpleanos || ['lider', 'maestro'];
+
+            // 4. Notificar líderes por departamento
             for (const deptId in studentsByDept) {
                 const { deptName, students } = studentsByDept[deptId];
                 const studentNames = students.map(s => `${s.first_name} ${s.last_name}`).join(', ');
 
                 console.log(`📍 [BirthdayService] Procesando departamento ${deptName} (${deptId}): ${studentNames}`);
-
-                // Leer roles configurados para notificaciones de cumpleaños
-                const { data: companyData } = await supabase
-                    .from('companies')
-                    .select('notification_settings')
-                    .eq('id', companyId || 1)
-                    .single();
-                const birthdayRoles = companyData?.notification_settings?.cumpleanos || ['lider', 'maestro'];
 
                 // Buscar usuarios con los roles configurados (incluyendo teléfono)
                 const { data: leaders, error: leaderError } = await supabase
