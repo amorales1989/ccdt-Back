@@ -21,6 +21,23 @@ class WhatsAppService {
     }
 
     /**
+     * Devuelve true solo si la carpeta tiene una sesión REALMENTE vinculada.
+     * Baileys marca creds.registered=true (y completa creds.me) cuando el
+     * dispositivo terminó de vincularse. Una carpeta a medio-vincular (se creó
+     * pero nunca se escaneó el QR) NO debe reconectarse: generaría un loop 408.
+     */
+    esSesionVinculada(authFolder) {
+        try {
+            const credsPath = path.join(authFolder, 'creds.json');
+            if (!fs.existsSync(credsPath)) return false;
+            const creds = JSON.parse(fs.readFileSync(credsPath, 'utf-8'));
+            return creds?.registered === true || !!creds?.me?.id;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
      * Escanea la carpeta de autenticación e inicializa las conexiones previas
      */
     async restaurarSesiones() {
@@ -32,13 +49,22 @@ class WhatsAppService {
 
         const folders = fs.readdirSync(authPath);
         for (const folder of folders) {
-            if (folder.startsWith('company_')) {
-                const companyId = folder.replace('company_', '');
-                console.log(`📡 [WhatsApp] Restaurando sesión para empresa: ${companyId}`);
-                this.conectar(companyId).catch(err => {
-                    console.error(`❌ Error restaurando sesión ${companyId}:`, err.message);
-                });
+            if (!folder.startsWith('company_')) continue;
+            const companyId = folder.replace('company_', '');
+            const authFolder = path.join(authPath, folder);
+
+            // Solo restaurar sesiones vinculadas de verdad. Carpetas sin vincular
+            // (ej: una empresa de prueba que nunca escaneó el QR) se ignoran para
+            // evitar reconexiones en loop con error 408.
+            if (!this.esSesionVinculada(authFolder)) {
+                console.log(`⏭️ [WhatsApp] Empresa ${companyId} sin sesión vinculada: se ignora (no se reconecta).`);
+                continue;
             }
+
+            console.log(`📡 [WhatsApp] Restaurando sesión para empresa: ${companyId}`);
+            this.conectar(companyId).catch(err => {
+                console.error(`❌ Error restaurando sesión ${companyId}:`, err.message);
+            });
         }
     }
 
@@ -218,9 +244,16 @@ class WhatsAppService {
         let sock = this.sessions.get(companyId);
 
         if (!sock) {
-            // Intentar reconectar si no está en memoria pero debería estarlo
-            await this.conectar(companyId);
-            sock = this.sessions.get(companyId);
+            // Reconectar solo si YA hay una sesión vinculada en disco. Nunca
+            // iniciar un flujo de QR nuevo desde un envío automático (ej: el
+            // scheduler iterando empresas sin WhatsApp vinculado): eso crearía
+            // un socket en loop 408 para una empresa que no tiene sesión.
+            const baseAuthDir = process.env.WHATSAPP_AUTH_DIR || path.join(__dirname, '../../auth');
+            const authFolder = path.join(baseAuthDir, `company_${companyId}`);
+            if (this.esSesionVinculada(authFolder)) {
+                await this.conectar(companyId);
+                sock = this.sessions.get(companyId);
+            }
         }
 
         if (!sock) {
