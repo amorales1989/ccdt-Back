@@ -43,6 +43,30 @@ class WhatsAppService {
     }
 
     async conectar(companyId) {
+        // Guardia anti-"ghost": solo abrir sesión para una empresa REAL.
+        // Un companyId basura (un teléfono, un id inexistente) crearía una carpeta
+        // company_* que luego compite con la sesión real y la tira (error 408).
+        const idNum = Number(companyId);
+        if (!Number.isInteger(idNum) || idNum <= 0 || idNum > 2147483647) {
+            console.warn(`⚠️ [WhatsApp] companyId inválido '${companyId}' (no es un id de empresa). No se crea sesión.`);
+            return;
+        }
+        try {
+            const { data: company, error } = await supabaseAdmin
+                .from('companies')
+                .select('id')
+                .eq('id', idNum)
+                .maybeSingle();
+            // Si la empresa no existe, no abrimos sesión (evita ghosts). En error
+            // transitorio de DB seguimos (fail-open) para no romper una sesión legítima.
+            if (!error && !company) {
+                console.warn(`⚠️ [WhatsApp] La empresa ${idNum} no existe. No se crea sesión de WhatsApp.`);
+                return;
+            }
+        } catch (e) {
+            console.error(`[WhatsApp] No se pudo validar companyId ${idNum}:`, e.message);
+        }
+
         // Evitar duplicados: Si ya hay un socket activo o conectando, no hacer nada
         if (this.sessions.has(companyId)) {
             const existingSock = this.sessions.get(companyId);

@@ -125,7 +125,9 @@ const webhookController = {
 
             const message = `✅ *CCDT Bot - Vercel Health Check*\n\nInformo que el sistema de WhatsApp está recibiendo las llamadas de Vercel Cron correctamente.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR')}\n⏰ Hora Actual: ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}\n\n_Seguimos en línea._ ⚡`;
 
-            const sent = await WhatsAppService.sendMessage(monitorNumber, message, true);
+            // sendMessage(companyId, phoneNumber, message): el health-check se envía
+            // AL número monitor usando la sesión de la empresa 1 (la del sistema).
+            const sent = await WhatsAppService.sendMessage(1, monitorNumber, message);
 
             if (sent) {
                 console.log('✅ Health Check enviado exitosamente');
