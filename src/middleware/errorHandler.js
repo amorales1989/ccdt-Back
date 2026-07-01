@@ -1,12 +1,21 @@
 // Middleware para manejo centralizado de errores
 const errorHandler = (err, req, res, next) => {
-  console.error('🔥 Error capturado:', {
-    message: err.message,
-    stack: err.stack,
-    url: req.url,
-    method: req.method,
-    timestamp: new Date().toISOString()
-  });
+  const status = err.status || (err.code && err.code.startsWith('PGRST') ? 400 : 500);
+
+  // Solo loguear ruidoso (con stack) los errores REALES del servidor (5xx).
+  // Los 4xx (validaciones, 404 de escáneres/bots) se loguean en una línea, sin
+  // stack y sin ir a Sentry, para no ensuciar logs ni gastar cuota.
+  if (status >= 500) {
+    console.error('🔥 Error capturado:', {
+      message: err.message,
+      stack: err.stack,
+      url: req.url,
+      method: req.method,
+      timestamp: new Date().toISOString()
+    });
+  } else {
+    console.warn(`⚠️ ${status} ${req.method} ${req.originalUrl}: ${err.message}`);
+  }
 
   // Error de Supabase
   if (err.code && err.code.startsWith('PGRST')) {
@@ -42,11 +51,15 @@ const errorHandler = (err, req, res, next) => {
   });
 };
 
-// Middleware para rutas no encontradas
+// Middleware para rutas no encontradas.
+// Responde 404 directo (sin generar un Error) para que los sondeos de bots a
+// rutas inexistentes NO lleguen a Sentry ni generen stack traces. La request
+// igual queda registrada por morgan.
 const notFound = (req, res, next) => {
-  const error = new Error(`Ruta no encontrada: ${req.originalUrl}`);
-  error.status = 404;
-  next(error);
+  res.status(404).json({
+    success: false,
+    message: 'Ruta no encontrada'
+  });
 };
 
 module.exports = {

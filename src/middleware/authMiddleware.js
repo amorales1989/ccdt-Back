@@ -88,6 +88,14 @@ const authMiddleware = async (req, res, next) => {
             department_id: profile?.department_id || null
         };
 
+        // System admin: super admin por encima de todas las empresas. No tiene company_id
+        // y opera cross-tenant; salteamos la exigencia/derivacion de company_id.
+        if (profile?.role === 'system_admin') {
+            req.isSystemAdmin = true;
+            req.companyId = null;
+            return next();
+        }
+
         // 4. Determinar companyId
         // Seguridad multi-tenant: la congregación SIEMPRE se deriva del perfil del usuario.
         // Nunca confiamos en un company_id provisto por el cliente (header/query).
@@ -110,6 +118,22 @@ const authMiddleware = async (req, res, next) => {
             return res.status(400).json({
                 success: false,
                 message: 'No se pudo determinar el ID de la empresa para esta solicitud'
+            });
+        }
+
+        // Bloqueo por empresa deshabilitada (ej: falta de pago). El system_admin ya retornó arriba.
+        const { data: company } = await supabaseAdmin
+            .from('companies')
+            .select('is_active')
+            .eq('id', req.companyId)
+            .single();
+
+        if (company && company.is_active === false) {
+            return res.status(403).json({
+                success: false,
+                code: 'COMPANY_INACTIVE',
+                role: profile?.role || null,
+                message: 'Empresa deshabilitada. Contactá al administrador del sistema.'
             });
         }
 

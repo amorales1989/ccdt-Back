@@ -123,7 +123,7 @@ const webhookController = {
                 return res.status(500).json({ success: false, message: 'MONITOR_WHATSAPP_NUMBER no configurado' });
             }
 
-            const message = `✅ *CCDT Bot - Vercel Health Check*\n\nInformo que el sistema de WhatsApp está recibiendo las llamadas de Vercel Cron correctamente.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR')}\n⏰ Hora Actual: ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}\n\n_Seguimos en línea._ ⚡`;
+            const message = `✅ *CCDT Bot - Vercel Health Check*\n\nInformo que el sistema de WhatsApp está recibiendo las llamadas de Vercel Cron correctamente.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}\n⏰ Hora Actual: ${new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit' })}\n\n_Seguimos en línea._ ⚡`;
 
             // sendMessage(companyId, phoneNumber, message): el health-check se envía
             // AL número monitor usando la sesión de la empresa 1 (la del sistema).

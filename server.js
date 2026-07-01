@@ -124,6 +124,13 @@ try {
   console.error('❌ Error loading topic records routes:', error.message);
 }
 
+let systemAdminRoutes;
+try {
+  systemAdminRoutes = require('./src/routes/systemAdminRoutes');
+} catch (error) {
+  console.error('❌ Error loading system admin routes:', error.message);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 const FALLBACK_PORT = 3002;
@@ -265,6 +272,10 @@ if (accountingRoutes) {
 
 if (topicRecordsRoutes) {
   app.use('/api/topic-records', authMiddleware, topicRecordsRoutes);
+}
+
+if (systemAdminRoutes) {
+  app.use('/api/system', authMiddleware, systemAdminRoutes);
 }
 
 // Heartbeat — solo actualiza last_active_at para mantener la sesión viva
