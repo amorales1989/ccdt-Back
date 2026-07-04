@@ -19,6 +19,24 @@ router.delete('/companies/:id', systemAdminController.deleteCompany);
 // PATCH /api/system/companies/:id/status - Activar/desactivar empresa
 router.patch('/companies/:id/status', systemAdminController.setCompanyStatus);
 
+// PATCH /api/system/companies/:id/plan - Cambiar plan de la empresa
+router.patch('/companies/:id/plan', systemAdminController.setCompanyPlan);
+
+// PATCH /api/system/companies/:id/packs - Agregar packs de +25 miembros extra
+router.patch('/companies/:id/packs', systemAdminController.setCompanyPacks);
+
+// POST /api/system/companies/:id/payments - Registrar pago manual
+router.post('/companies/:id/payments', systemAdminController.recordPayment);
+
+// GET /api/system/companies/:id/payments - Historial de pagos de una empresa
+router.get('/companies/:id/payments', systemAdminController.getCompanyPayments);
+
+// GET /api/system/plans - Listar planes con precios
+router.get('/plans', systemAdminController.getPlans);
+
+// PUT /api/system/plans/:value - Actualizar precios de un plan
+router.put('/plans/:value', systemAdminController.updatePlan);
+
 // GET /api/system/companies/:id/admins - Listar admins de una empresa
 router.get('/companies/:id/admins', systemAdminController.listCompanyAdmins);
 

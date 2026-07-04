@@ -22,7 +22,7 @@ const systemAdminController = {
 
       const { data: companies, error } = await supabaseAdmin
         .from('companies')
-        .select('id, name, congregation_name, is_active, created_at')
+        .select('id, name, congregation_name, is_active, created_at, plan, extra_member_packs, billing_cycle, last_payment_date, due_date')
         .order('id');
       if (error) throw error;
 
@@ -73,7 +73,7 @@ const systemAdminController = {
       const { data, error } = await supabaseAdmin
         .from('companies')
         .insert({ name: name.trim(), congregation_name: congregation_name?.trim() || null })
-        .select('id, name, congregation_name, is_active, created_at')
+        .select('id, name, congregation_name, is_active, created_at, plan, extra_member_packs, billing_cycle, last_payment_date, due_date')
         .single();
       if (error) throw error;
 
@@ -101,7 +101,7 @@ const systemAdminController = {
         .from('companies')
         .update({ name: name.trim(), congregation_name: congregation_name?.trim() || null })
         .eq('id', id)
-        .select('id, name, congregation_name, is_active, created_at')
+        .select('id, name, congregation_name, is_active, created_at, plan, extra_member_packs, billing_cycle, last_payment_date, due_date')
         .single();
       if (error) throw error;
       if (!data) return res.status(404).json({ success: false, message: 'Empresa no encontrada' });
@@ -162,7 +162,7 @@ const systemAdminController = {
         .from('companies')
         .update({ is_active })
         .eq('id', id)
-        .select('id, name, congregation_name, is_active, created_at')
+        .select('id, name, congregation_name, is_active, created_at, plan, extra_member_packs, billing_cycle, last_payment_date, due_date')
         .single();
       if (error) throw error;
       if (!data) return res.status(404).json({ success: false, message: 'Empresa no encontrada' });
@@ -171,6 +171,145 @@ const systemAdminController = {
     } catch (error) {
       next(error);
     }
+  },
+
+  // PATCH /api/system/companies/:id/plan
+  setCompanyPlan: async (req, res, next) => {
+    try {
+      if (!ensureSystemAdmin(req, res)) return;
+
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) {
+        return res.status(400).json({ success: false, message: 'ID de empresa inválido' });
+      }
+      const { plan } = req.body || {};
+      if (plan != null && typeof plan !== 'string') {
+        return res.status(400).json({ success: false, message: 'plan inválido' });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('companies')
+        .update({ plan: plan || null })
+        .eq('id', id)
+        .select('id, name, congregation_name, is_active, created_at, plan, extra_member_packs, billing_cycle, last_payment_date, due_date')
+        .single();
+      if (error) throw error;
+      if (!data) return res.status(404).json({ success: false, message: 'Empresa no encontrada' });
+
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // PATCH /api/system/companies/:id/packs
+  setCompanyPacks: async (req, res, next) => {
+    try {
+      if (!ensureSystemAdmin(req, res)) return;
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) return res.status(400).json({ success: false, message: 'ID de empresa inválido' });
+      const packs = parseInt(req.body?.extra_member_packs, 10);
+      if (!Number.isInteger(packs) || packs < 0) return res.status(400).json({ success: false, message: 'extra_member_packs debe ser un entero >= 0' });
+      const { data, error } = await supabaseAdmin
+        .from('companies')
+        .update({ extra_member_packs: packs })
+        .eq('id', id)
+        .select('id, name, congregation_name, is_active, created_at, plan, extra_member_packs, billing_cycle, last_payment_date, due_date')
+        .single();
+      if (error) throw error;
+      if (!data) return res.status(404).json({ success: false, message: 'Empresa no encontrada' });
+      res.json({ success: true, data });
+    } catch (error) { next(error); }
+  },
+
+  // POST /api/system/companies/:id/payments
+  recordPayment: async (req, res, next) => {
+    try {
+      if (!ensureSystemAdmin(req, res)) return;
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) return res.status(400).json({ success: false, message: 'ID de empresa inválido' });
+      const amount = Number(req.body?.amount);
+      const billing_cycle = req.body?.billing_cycle === 'anual' ? 'anual' : 'mensual';
+      const source = typeof req.body?.source === 'string' ? req.body.source : 'manual';
+      const notes = typeof req.body?.notes === 'string' ? req.body.notes : null;
+      if (!Number.isFinite(amount) || amount < 0) return res.status(400).json({ success: false, message: 'Monto inválido' });
+
+      // Traer due_date actual para stackear si aún no venció
+      const { data: comp, error: cErr } = await supabaseAdmin.from('companies').select('due_date').eq('id', id).single();
+      if (cErr) throw cErr;
+      if (!comp) return res.status(404).json({ success: false, message: 'Empresa no encontrada' });
+
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const base = (comp.due_date && comp.due_date > todayStr) ? new Date(comp.due_date) : today;
+      const periodStart = new Date(base);
+      const periodEnd = new Date(base);
+      if (billing_cycle === 'anual') periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+      else periodEnd.setMonth(periodEnd.getMonth() + 1);
+      const due = periodEnd.toISOString().slice(0, 10);
+
+      const { error: payErr } = await supabaseAdmin.from('payments').insert({
+        company_id: id, amount, billing_cycle, source, notes,
+        period_start: periodStart.toISOString().slice(0, 10), period_end: due,
+      });
+      if (payErr) throw payErr;
+
+      const { data, error } = await supabaseAdmin.from('companies')
+        .update({ last_payment_date: todayStr, due_date: due, billing_cycle, is_active: true })
+        .eq('id', id)
+        .select('id, name, congregation_name, is_active, created_at, plan, extra_member_packs, billing_cycle, last_payment_date, due_date')
+        .single();
+      if (error) throw error;
+      res.json({ success: true, data });
+    } catch (error) { next(error); }
+  },
+
+  // GET /api/system/companies/:id/payments
+  getCompanyPayments: async (req, res, next) => {
+    try {
+      if (!ensureSystemAdmin(req, res)) return;
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) return res.status(400).json({ success: false, message: 'ID de empresa inválido' });
+      const { data, error } = await supabaseAdmin.from('payments')
+        .select('*').eq('company_id', id).order('created_at', { ascending: false });
+      if (error) throw error;
+      res.json({ success: true, data: data || [] });
+    } catch (error) { next(error); }
+  },
+
+  // GET /api/system/plans
+  getPlans: async (req, res, next) => {
+    try {
+      if (!ensureSystemAdmin(req, res)) return;
+      const { data, error } = await supabaseAdmin.from('plans').select('*').order('sort');
+      if (error) throw error;
+      res.json({ success: true, data: data || [] });
+    } catch (error) { next(error); }
+  },
+
+  // PUT /api/system/plans/:value
+  updatePlan: async (req, res, next) => {
+    try {
+      if (!ensureSystemAdmin(req, res)) return;
+      const { value } = req.params;
+      const price_monthly = Number(req.body?.price_monthly);
+      const pack_price_monthly = Number(req.body?.pack_price_monthly);
+      if (!Number.isFinite(price_monthly) || price_monthly < 0) {
+        return res.status(400).json({ success: false, message: 'price_monthly inválido' });
+      }
+      if (!Number.isFinite(pack_price_monthly) || pack_price_monthly < 0) {
+        return res.status(400).json({ success: false, message: 'pack_price_monthly inválido' });
+      }
+      const { data, error } = await supabaseAdmin
+        .from('plans')
+        .update({ price_monthly, pack_price_monthly })
+        .eq('value', value)
+        .select('*')
+        .single();
+      if (error) throw error;
+      if (!data) return res.status(404).json({ success: false, message: 'Plan no encontrado' });
+      res.json({ success: true, data });
+    } catch (error) { next(error); }
   },
 
   // GET /api/system/companies/:id/admins

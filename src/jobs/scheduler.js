@@ -215,6 +215,62 @@ const initScheduledJobs = () => {
 
     console.log('📅 Tarea programada: Alerta de solicitudes pendientes a las 09:00 AM');
 
+    // Recordatorio de vencimiento de suscripción (10:00 AM)
+    cron.schedule('0 10 * * *', async () => {
+        console.log('⏰ [Cron Job] Verificación de vencimientos de suscripción (10:00 AM)...');
+        try {
+            const { supabaseAdmin } = require('../config/supabase');
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const { data: companies } = await supabaseAdmin
+                .from('companies')
+                .select('id, name, due_date')
+                .not('due_date', 'is', null);
+
+            if (!companies) return;
+
+            const REMIND_DAYS = [7, 3, 1];
+
+            for (const c of companies) {
+                const due = new Date(`${c.due_date}T00:00:00`);
+                const diffDays = Math.floor((due.getTime() - today.getTime()) / 86400000);
+
+                let message = null;
+                if (diffDays > 0 && REMIND_DAYS.includes(diffDays)) {
+                    message = `⚠️ *CCDT — Suscripción por vencer*\n\nTu suscripción vence el ${due.toLocaleDateString('es-AR')} (en ${diffDays} día${diffDays === 1 ? '' : 's'}).\n\nRenovala desde *Configuración › Plan* para no interrumpir el servicio.`;
+                } else if (diffDays === 0) {
+                    message = `🔴 *CCDT — Suscripción vencida hoy*\n\nRegularizá el pago desde *Configuración › Plan* para mantener el acceso activo.`;
+                }
+                if (!message) continue;
+
+                // Destinatarios: admin y secretaria con teléfono cargado.
+                const { data: recips } = await supabaseAdmin
+                    .from('profiles')
+                    .select('phone')
+                    .eq('company_id', c.id)
+                    .in('role', ['admin', 'secretaria'])
+                    .not('phone', 'is', null);
+
+                const bulk = (recips || [])
+                    .filter(r => r.phone && String(r.phone).trim() !== '')
+                    .map(r => ({ phone: String(r.phone).trim() }));
+                if (bulk.length === 0) continue;
+
+                const result = await WhatsAppService.sendBulkMessages(c.id, bulk, message);
+                console.log(`✅ [Cron Job] Vencimiento empresa ${c.id} (${diffDays}d): enviados ${result.sent}, fallidos ${result.failed}.`);
+            }
+        } catch (error) {
+            console.error('❌ [Cron Job] Error en recordatorios de vencimiento:', error.message);
+            Sentry.captureException(error, { tags: { job: 'vencimiento-suscripcion' } });
+        }
+    }, {
+        scheduled: true,
+        timezone: "America/Argentina/Buenos_Aires"
+    });
+
+    console.log('📅 Tarea programada: Recordatorio de vencimiento de suscripción a las 10:00 AM');
+
 };
 
 module.exports = initScheduledJobs;

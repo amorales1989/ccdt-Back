@@ -131,6 +131,13 @@ try {
   console.error('❌ Error loading system admin routes:', error.message);
 }
 
+let subscriptionRoutes;
+try {
+  subscriptionRoutes = require('./src/routes/subscriptionRoutes');
+} catch (error) {
+  console.error('❌ Error loading subscription routes:', error.message);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 const FALLBACK_PORT = 3002;
@@ -276,6 +283,10 @@ if (topicRecordsRoutes) {
 
 if (systemAdminRoutes) {
   app.use('/api/system', authMiddleware, systemAdminRoutes);
+}
+
+if (subscriptionRoutes) {
+  app.use('/api/subscription', authMiddleware, subscriptionRoutes);
 }
 
 // Heartbeat — solo actualiza last_active_at para mantener la sesión viva
