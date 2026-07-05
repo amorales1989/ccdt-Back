@@ -2,7 +2,8 @@ const { supabaseAdmin } = require('../config/supabase');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const WRITE_ROLES = ['admin', 'lider', 'director', 'vicedirector', 'director_general'];
-const READ_ALL_ROLES = ['admin', 'secretaria', 'director_general'];
+// director_general se limita a los departamentos asignados en su perfil (via READ_SCOPED_ROLES).
+const READ_ALL_ROLES = ['admin', 'secretaria'];
 const READ_SCOPED_ROLES = ['director', 'vicedirector', 'director_general', 'lider'];
 
 const err = (msg, status) => { const e = new Error(msg); e.status = status; return e; };

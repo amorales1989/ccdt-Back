@@ -2,8 +2,9 @@ const { supabase } = require('../config/supabase');
 
 // Roles que pueden consultar la cobertura de asistencia
 const COVERAGE_ROLES = ['admin', 'secretaria', 'director', 'vicedirector', 'director_general'];
-// Roles que ven TODOS los departamentos de la empresa (el resto, solo los suyos)
-const ALL_DEPT_ROLES = ['admin', 'secretaria', 'director_general'];
+// Roles que ven TODOS los departamentos de la empresa. director/vicedirector/director_general
+// se limitan a los departamentos asignados en su perfil (configurable en Gestión de Usuarios).
+const ALL_DEPT_ROLES = ['admin', 'secretaria'];
 
 const norm = (v) => (v || '').toString().toLowerCase().trim();
 
