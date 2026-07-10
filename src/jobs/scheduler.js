@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const Sentry = require('@sentry/node');
 const BirthdayService = require('../services/birthdayService');
+const AbsenceService = require('../services/absenceService');
 const WhatsAppService = require('../services/whatsappService');
 
 const initScheduledJobs = () => {
@@ -270,6 +271,30 @@ const initScheduledJobs = () => {
     });
 
     console.log('📅 Tarea programada: Recordatorio de vencimiento de suscripción a las 10:00 AM');
+
+    // Verificación de ausencias (8:40 AM) - Alumnos sin asistir a las últimas 4 clases
+    cron.schedule('40 8 * * *', async () => {
+        console.log('⏰ [Cron Job] Ejecutando verificación de ausencias (8:40 AM)...');
+        try {
+            const { supabaseAdmin } = require('../config/supabase');
+            const { data: companies } = await supabaseAdmin.from('companies').select('id');
+
+            if (companies) {
+                for (const company of companies) {
+                    const result = await AbsenceService.checkAbsentStudents(company.id);
+                    console.log(`✅ [Cron Job] Ausencias empresa ${company.id}:`, result);
+                }
+            }
+        } catch (error) {
+            console.error('❌ [Cron Job] Error en verificación de ausencias:', error);
+            Sentry.captureException(error, { tags: { job: 'ausencias' } });
+        }
+    }, {
+        scheduled: true,
+        timezone: "America/Argentina/Buenos_Aires"
+    });
+
+    console.log('📅 Tarea programada: Verificación de ausencias diaria a las 08:40 AM');
 
 };
 
