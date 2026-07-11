@@ -1,6 +1,6 @@
 const { supabase, supabaseAdmin } = require('../config/supabase');
 const BirthdayService = require('../services/birthdayService');
-const { effectiveLimit } = require('../config/plans');
+const { assertMemberLimitNotReached } = require('../services/memberLimitService');
 
 const studentsController = {
   // POST /api/students/check-birthdays
@@ -387,25 +387,7 @@ id,
       };
 
       // Enforcement de límite de miembros del plan (miembros nuevos solamente).
-      const { data: companyRow } = await supabase
-        .from('companies')
-        .select('plan, extra_member_packs')
-        .eq('id', req.companyId)
-        .single();
-      const memberLimit = effectiveLimit(companyRow?.plan, companyRow?.extra_member_packs);
-      if (memberLimit != null) {
-        const { count: currentMembers } = await supabase
-          .from('students')
-          .select('id', { count: 'exact', head: true })
-          .eq('company_id', req.companyId)
-          .is('deleted_at', null);
-        if ((currentMembers || 0) >= memberLimit) {
-          const err = new Error('Alcanzaste el límite de miembros de tu plan (' + memberLimit + '). Contactá al administrador del sistema para ampliar tu plan o agregar packs de miembros.');
-          err.status = 403;
-          err.code = 'MEMBER_LIMIT_REACHED';
-          throw err;
-        }
-      }
+      await assertMemberLimitNotReached(req.companyId);
 
       const { data, error } = await supabase
         .from('students')

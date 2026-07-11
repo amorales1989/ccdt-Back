@@ -138,6 +138,13 @@ try {
   console.error('❌ Error loading subscription routes:', error.message);
 }
 
+let smallGroupsRoutes;
+try {
+  smallGroupsRoutes = require('./src/routes/smallGroupsRoutes');
+} catch (error) {
+  console.error('❌ Error loading small groups routes:', error.message);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 const FALLBACK_PORT = 3002;
@@ -287,6 +294,10 @@ if (systemAdminRoutes) {
 
 if (subscriptionRoutes) {
   app.use('/api/subscription', authMiddleware, subscriptionRoutes);
+}
+
+if (smallGroupsRoutes) {
+  app.use('/api/small-groups', authMiddleware, smallGroupsRoutes);
 }
 
 // Heartbeat — solo actualiza last_active_at para mantener la sesión viva
