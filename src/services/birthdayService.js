@@ -166,6 +166,65 @@ class BirthdayService {
                 }
             }
 
+            // 5. Directores generales: cumpleaños de la clase "Obreros" de los departamentos que tienen
+            // asignados. No entran en el loop de arriba porque su `department_id` es uno solo, mientras
+            // que trabajan sobre varios departamentos (profiles.departments guarda los NOMBRES).
+            const { data: directoresGenerales, error: dgError } = await supabase
+                .from('profiles')
+                .select('id, first_name, phone, departments')
+                .eq('role', 'director_general')
+                .eq('company_id', companyId || 1);
+
+            if (dgError) {
+                console.error('❌ [BirthdayService] Error buscando directores generales:', dgError.message);
+            }
+
+            for (const dg of directoresGenerales || []) {
+                const deptNames = (dg.departments || []).map(n => (n || '').toLowerCase());
+                if (deptNames.length === 0) continue;
+
+                const obreros = [];
+                const seen = new Set();
+                for (const deptId in studentsByDept) {
+                    const { deptName, students } = studentsByDept[deptId];
+                    if (!deptNames.includes((deptName || '').toLowerCase())) continue;
+                    students
+                        .filter(s => (s.assigned_class || '').toLowerCase() === 'obreros')
+                        .forEach(s => {
+                            if (seen.has(s.id)) return;
+                            seen.add(s.id);
+                            obreros.push({ ...s, deptName });
+                        });
+                }
+                if (obreros.length === 0) continue;
+
+                const names = obreros.map(s => `${s.first_name} ${s.last_name} (${s.deptName})`).join(', ');
+                const title = '🎂 ¡Cumpleaños de obreros!';
+                const body = obreros.length === 1
+                    ? `Hoy es el cumpleaños de ${names}`
+                    : `Hoy cumplen años: ${names}`;
+
+                try {
+                    const result = await NotificationService.enviarAUsuario(dg.id, { titulo: title, cuerpo: body }, {
+                        tipo: 'cumpleanos',
+                        studentIds: JSON.stringify(obreros.map(s => s.id)),
+                    });
+                    notificationsSent.push({ leaderId: dg.id, dept: 'obreros', success: result.success, type: 'fcm' });
+                } catch (notifyError) {
+                    console.error(`❌ [BirthdayService] Error notificando al director general ${dg.id}:`, notifyError.message);
+                }
+
+                if (dg.phone) {
+                    waQueue.push({
+                        phone: dg.phone,
+                        message: `🎂 *¡Cumpleaños de obreros!* 🎂\n\n${body}\n\n_Enviado automáticamente por CCDT Bot_`,
+                        name: dg.first_name,
+                        leaderId: dg.id,
+                        dept: 'obreros',
+                    });
+                }
+            }
+
             // Procesar cola de WhatsApp con delay aleatorio 15-30s entre envíos (evita bloqueos por spam)
             if (waQueue.length > 0) {
                 console.log(`📤 [BirthdayService] Enviando ${waQueue.length} WhatsApp de cumpleaños con delay 15-30s...`);
