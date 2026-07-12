@@ -697,6 +697,40 @@ id,
         .eq('company_id', req.companyId);
 
       if (error) throw error;
+
+      // Si el departamento quitado era el primario del alumno, hay que reemplazarlo por otra
+      // asignación que le quede; si no le queda ninguna, el miembro pasa a estar sin departamento
+      // (sigue contando como miembro de la congregación, pero fuera de asistencia/ausencias).
+      const { data: student, error: studentErr } = await supabase
+        .from('students')
+        .select('id, department_id')
+        .eq('id', id)
+        .eq('company_id', req.companyId)
+        .maybeSingle();
+      if (studentErr) throw studentErr;
+
+      if (student && student.department_id === deptId) {
+        const { data: remaining, error: remErr } = await supabase
+          .from('student_departments')
+          .select('department_id, assigned_class, departments(name)')
+          .eq('student_id', id)
+          .eq('company_id', req.companyId)
+          .limit(1);
+        if (remErr) throw remErr;
+
+        const fallback = remaining?.[0] || null;
+        const { error: updErr } = await supabase
+          .from('students')
+          .update({
+            department_id: fallback?.department_id || null,
+            assigned_class: fallback?.assigned_class || null,
+            department: fallback?.departments?.name || null,
+          })
+          .eq('id', id)
+          .eq('company_id', req.companyId);
+        if (updErr) throw updErr;
+      }
+
       res.json({ success: true });
     } catch (error) {
       next(error);
