@@ -15,6 +15,27 @@ const yesterdayInAR = () => {
     return d.toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
 };
 
+// PostgREST corta en 1000 filas por request: sin paginar, un depto grande pierde las fechas
+// más recientes y todos sus alumnos parecen ausentes.
+const PAGE_SIZE = 1000;
+const fetchAttendance = async (departmentId, companyId, dates) => {
+    const rows = [];
+    for (let from = 0; ; from += PAGE_SIZE) {
+        const { data, error } = await supabase
+            .from('attendance')
+            .select('student_id, date, status')
+            .eq('department_id', departmentId)
+            .eq('company_id', companyId)
+            .in('date', dates)
+            .order('date', { ascending: false })
+            .order('student_id', { ascending: true })
+            .range(from, from + PAGE_SIZE - 1);
+        if (error) throw error;
+        rows.push(...(data || []));
+        if (!data || data.length < PAGE_SIZE) return rows;
+    }
+};
+
 const weekdayOf = (dateStr) => {
     const [y, m, d] = dateStr.split('-').map(Number);
     return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
@@ -100,13 +121,10 @@ class AbsenceService {
             });
             if (roster.size === 0) continue;
 
-            const { data: att, error: attErr } = await supabase
-                .from('attendance')
-                .select('student_id, date, status')
-                .eq('department_id', dept.id)
-                .eq('company_id', companyId)
-                .in('date', dates);
-            if (attErr) {
+            let att;
+            try {
+                att = await fetchAttendance(dept.id, companyId, dates);
+            } catch (attErr) {
                 console.error(`❌ [AbsenceService] Error trayendo asistencia de dept ${dept.id}:`, attErr.message);
                 continue;
             }
