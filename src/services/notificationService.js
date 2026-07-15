@@ -1,11 +1,37 @@
 const { messaging } = require('../config/firebase');
-const { supabase } = require('../config/supabase');
+const { supabase, supabaseAdmin } = require('../config/supabase');
 const MonitorService = require('./monitorService');
 
 class NotificationService {
+  // Guarda la notificación en user_notifications para que el usuario pueda
+  // volver a verla desde la campanita. No debe tirar el envío si falla.
+  async persistirNotificacion(usuarioId, notification, data = {}, link = '/') {
+    try {
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('company_id')
+        .eq('id', usuarioId)
+        .single();
+      if (!profile) return;
+
+      await supabaseAdmin.from('user_notifications').insert({
+        company_id: profile.company_id,
+        profile_id: usuarioId,
+        title: notification.titulo || notification.title || 'Notificación',
+        body: notification.cuerpo || notification.body || '',
+        link: link && link !== '/' ? link : null,
+        type: data.tipo || 'general',
+      });
+    } catch (err) {
+      console.error('Error persistiendo notificación:', err.message);
+    }
+  }
+
   // Enviar a un usuario específico por su ID
   async enviarAUsuario(usuarioId, notification, data = {}, link = '/') {
     try {
+      // Se guarda siempre (aunque no tenga dispositivos) para que pueda verla en la app
+      await this.persistirNotificacion(usuarioId, notification, data, link);
 
       // Obtener tokens activos del usuario
       const { data: rows, error } = await supabase

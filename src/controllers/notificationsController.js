@@ -1,4 +1,4 @@
-const { supabase } = require('../config/supabase');
+const { supabase, supabaseAdmin } = require('../config/supabase');
 const NotificationService = require('../services/notificationService');
 const WhatsAppService = require('../services/whatsappService');
 
@@ -201,6 +201,64 @@ exports.broadcast = async (req, res, next) => {
       push: { sent: pushSent, fallbackToWa: waFallback.length },
       whatsapp: { queued: waFallback.length }
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET /api/notifications/mine — últimas notificaciones del usuario autenticado
+exports.getMine = async (req, res, next) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
+    // Solo notificaciones de los últimos 30 días
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Scope por usuario autenticado + company del token (supabaseAdmin ignora RLS)
+    const { data, error } = await supabaseAdmin
+      .from('user_notifications')
+      .select('id, title, body, link, type, read_at, created_at')
+      .eq('profile_id', req.user.id)
+      .eq('company_id', req.companyId)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+
+    const { count, error: countError } = await supabaseAdmin
+      .from('user_notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('profile_id', req.user.id)
+      .eq('company_id', req.companyId)
+      .gte('created_at', since)
+      .is('read_at', null);
+    if (countError) throw countError;
+
+    res.json({ success: true, data: data || [], unread: count || 0 });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// POST /api/notifications/mine/read — marca como leídas (ids específicos o todas)
+exports.markMineRead = async (req, res, next) => {
+  try {
+    const { ids } = req.body || {};
+
+    let q = supabaseAdmin
+      .from('user_notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('profile_id', req.user.id)
+      .eq('company_id', req.companyId)
+      .is('read_at', null);
+
+    if (Array.isArray(ids) && ids.length > 0) {
+      q = q.in('id', ids);
+    }
+
+    const { error } = await q;
+    if (error) throw error;
+
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

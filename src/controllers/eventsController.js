@@ -471,6 +471,8 @@ const eventsController = {
       }
 
       // ✅ Enviar notificación push FCM al solicitante
+      // Si el push llega (tiene dispositivos con notificaciones activas), NO se manda WhatsApp.
+      let pushDelivered = false;
       try {
         if (solicitante_id) {
           const notificationTitle = isApproved
@@ -481,7 +483,7 @@ const eventsController = {
             ? `Tu evento "${eventTitle}" ha sido aprobado`
             : `Tu evento "${eventTitle}" ha sido rechazado`;
 
-          await NotificationService.enviarAUsuario(solicitante_id, {
+          const pushResult = await NotificationService.enviarAUsuario(solicitante_id, {
             titulo: notificationTitle,
             cuerpo: notificationBody
           }, {
@@ -495,48 +497,60 @@ const eventsController = {
             adminMessage: adminMessage || '',
             description: description || ''
           }, '/events');
+
+          pushDelivered = !!(pushResult && pushResult.success !== false && (pushResult.successCount === undefined || pushResult.successCount > 0));
         }
       } catch (fcmError) {
         console.error('[CCDT] FCM Response Error:', fcmError.message);
       }
 
-      // ✅ Notificar a roles adicionales configurados (eventos_aprobados)
+      // ✅ Notificar a todos los usuarios de la empresa (perfiles con acceso al sistema).
+      // Push + campanita para cada uno; WhatsApp solo para quienes no reciben push.
+      // Fire-and-forget para no bloquear la respuesta.
       if (isApproved) {
-        try {
-          const { data: companyConfig } = await supabaseAdmin
-            .from('companies')
-            .select('notification_settings')
-            .eq('id', req.companyId)
-            .single();
+        const notifyCompany = async () => {
+          const { data: companyProfiles, error: profilesError } = await supabaseAdmin
+            .from('profiles')
+            .select('id, first_name, last_name, phone')
+            .eq('company_id', req.companyId);
+          if (profilesError) throw profilesError;
 
-          const extraRoles = companyConfig?.notification_settings?.eventos_aprobados || [];
+          const recipients = (companyProfiles || []).filter(p => p.id !== solicitante_id);
+          const title = `✅ Evento aprobado: ${eventTitle}`;
+          const body = `${requesterName} realizará "${eventTitle}" el ${adjustedDateForN8n}${eventTime ? ` a las ${eventTime}` : ''}.`;
+          const waFallback = [];
 
-          if (extraRoles.length > 0) {
-            // Obtener tokens de todos los roles configurados en una sola query
-            const { data: extraTokens } = await supabaseAdmin
-              .from('usuarios_tokens_fcm')
-              .select('token')
-              .in('role', extraRoles)
-              .eq('company_id', req.companyId)
-              .eq('activo', true);
+          for (const p of recipients) {
+            try {
+              const result = await NotificationService.enviarAUsuario(p.id, {
+                titulo: title,
+                cuerpo: body
+              }, { tipo: 'evento_aprobado', eventTitle, department: department || '' }, '/events');
 
-            if (extraTokens && extraTokens.length > 0) {
-              await NotificationService.enviarMultiple(
-                extraTokens.map(r => r.token),
-                { titulo: `✅ Evento aprobado: ${eventTitle}`, cuerpo: `Solicitud de ${requesterName} para el ${adjustedDateForN8n} aprobada.` },
-                { tipo: 'evento_aprobado', eventTitle, department: department || '' },
-                '/events'
-              );
+              const delivered = !!(result && result.success !== false && (result.successCount === undefined || result.successCount > 0));
+              if (!delivered && p.phone && String(p.phone).trim() !== '') {
+                waFallback.push({ phone: p.phone, name: `${p.first_name || ''} ${p.last_name || ''}`.trim() });
+              }
+            } catch (err) {
+              if (p.phone && String(p.phone).trim() !== '') {
+                waFallback.push({ phone: p.phone, name: `${p.first_name || ''} ${p.last_name || ''}`.trim() });
+              }
             }
           }
-        } catch (extraNotifError) {
-          console.error('[CCDT] Error notificando roles adicionales:', extraNotifError.message);
-        }
+
+          if (waFallback.length > 0) {
+            const waText = `✅ *Evento aprobado*\n\n*Evento:* ${eventTitle}\n*Fecha:* ${adjustedDateForN8n}${eventTime ? `\n*Hora:* ${eventTime}` : ''}`;
+            WhatsAppService.sendBulkMessages(req.companyId, waFallback, waText)
+              .then(r => console.log(`[Evento aprobado WA] sent=${r.sent} failed=${r.failed}`))
+              .catch(err => console.error('[Evento aprobado WA] Error:', err.message));
+          }
+        };
+        notifyCompany().catch(err => console.error('[CCDT] Error notificando evento aprobado a la empresa:', err.message));
       }
 
-      // ✅ Enviar notificación WhatsApp al solicitante
+      // ✅ Enviar notificación WhatsApp al solicitante SOLO si el push no llegó
       try {
-        if (solicitante_id) {
+        if (solicitante_id && !pushDelivered) {
           const { data: requester, error: reqError } = await supabaseAdmin
             .from('profiles')
             .select('first_name, phone')
