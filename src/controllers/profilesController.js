@@ -2,6 +2,41 @@ const { supabase, supabaseAdmin } = require('../config/supabase');
 const { assertMemberLimitNotReached } = require('../services/memberLimitService');
 
 const profilesController = {
+  // GET /api/profiles/staff-assignments
+  // Perfiles de la empresa con sus assignments reales, que viven en
+  // auth.users.user_metadata (la columna profiles.assignments está vacía).
+  // Devuelve solo campos mínimos (sin email/teléfono/DNI): lo usa el front
+  // para contar obreros por departamento.
+  getStaffAssignments: async (req, res, next) => {
+    try {
+      const { data: profiles, error } = await supabaseAdmin
+        .from('profiles')
+        .select('id, first_name, last_name, role, department_id, assigned_class')
+        .eq('company_id', req.companyId);
+      if (error) throw error;
+
+      const ids = new Set((profiles || []).map(p => p.id));
+      const metaById = {};
+      let page = 1;
+      // listUsers es cross-tenant: solo tomamos metadata de los ids de esta empresa
+      while (true) {
+        const { data, error: listErr } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 });
+        if (listErr) throw listErr;
+        const users = data?.users || [];
+        users.forEach(u => { if (ids.has(u.id)) metaById[u.id] = u.user_metadata?.assignments || []; });
+        if (users.length < 1000) break;
+        page++;
+      }
+
+      res.json({
+        success: true,
+        data: (profiles || []).map(p => ({ ...p, assignments: metaById[p.id] || [] })),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
   // POST /api/profiles/:id/clear-member-departments
   // El usuario dejó de trabajar (rol "miembro"): su ficha de miembro sale de todos los
   // departamentos. Sigue contando como miembro de la congregación, pero fuera de

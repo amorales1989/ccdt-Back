@@ -6,6 +6,9 @@ const profilesController = require('../controllers/profilesController');
 // GET /api/profiles/search?q=xxx
 router.get('/search', searchProfiles);
 
+// GET /api/profiles/staff-assignments — perfiles con assignments reales (user_metadata)
+router.get('/staff-assignments', profilesController.getStaffAssignments);
+
 // POST /api/profiles/:id/convert-to-member — borra la cuenta y conserva a la persona como miembro
 router.post('/:id/convert-to-member', profilesController.convertToMember);
 
