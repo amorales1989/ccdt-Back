@@ -288,6 +288,7 @@ id,
         address,
         document_number,
         nuevo,
+        baptized,
         profile_id,
         person_source,
         existing_student_id
@@ -383,6 +384,7 @@ id,
         document_number: document_number ? document_number.trim() : null,
         profile_id: profile_id || null,
         nuevo: nuevo !== undefined ? nuevo : true,
+        baptized: baptized === true,
         company_id: req.companyId
       };
 
@@ -503,6 +505,16 @@ id,
 
       if (error) {
         throw error;
+      }
+
+      // Si el miembro está vinculado a un usuario, sincronizar baptized al perfil:
+      // get_students prioriza p.baptized, así que sin esto la edición no se vería.
+      if (data.profile_id && cleanUpdates.baptized !== undefined) {
+        await supabaseAdmin
+          .from('profiles')
+          .update({ baptized: cleanUpdates.baptized === true })
+          .eq('id', data.profile_id)
+          .eq('company_id', req.companyId);
       }
 
       // Sincronizar datos personales con otros registros del mismo perfil

@@ -99,6 +99,61 @@ async function resolveRecipients(target, companyId) {
   }));
 }
 
+// Etiqueta legible del destino para el historial (sin detallar persona por persona)
+async function buildTargetLabel(target, companyId, recipients) {
+  switch (target.type) {
+    case 'department': {
+      const { data } = await supabase
+        .from('departments').select('name')
+        .eq('id', target.department_id).eq('company_id', companyId).single();
+      return `Departamento: ${data?.name || 'desconocido'}`;
+    }
+    case 'class': {
+      const { data } = await supabase
+        .from('departments').select('name')
+        .eq('id', target.department_id).eq('company_id', companyId).single();
+      return `Clase: ${data?.name || ''} · ${target.assigned_class}`;
+    }
+    case 'role':
+      return `Roles: ${target.roles.join(', ')}`;
+    case 'people': {
+      const names = recipients.map(p => `${p.first_name || ''} ${p.last_name || ''}`.trim()).filter(Boolean);
+      if (names.length <= 3) return names.join(', ');
+      return `${names.slice(0, 3).join(', ')} y ${names.length - 3} más`;
+    }
+    default:
+      return target.type;
+  }
+}
+
+// Registra el envío en notification_broadcasts; devuelve el id (o null si falla)
+async function saveBroadcastHistory(row) {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('notification_broadcasts')
+      .insert(row)
+      .select('id')
+      .single();
+    if (error) throw error;
+    return data.id;
+  } catch (err) {
+    console.error('[Broadcast] Error guardando historial:', err.message);
+    return null;
+  }
+}
+
+// Actualiza wa_sent cuando termina el envío en background
+function updateHistoryWaSent(historyId, sent) {
+  if (!historyId) return;
+  supabaseAdmin
+    .from('notification_broadcasts')
+    .update({ wa_sent: sent })
+    .eq('id', historyId)
+    .then(({ error }) => {
+      if (error) console.error('[Broadcast] Error actualizando wa_sent:', error.message);
+    });
+}
+
 // POST /api/notifications/broadcast
 exports.broadcast = async (req, res, next) => {
   try {
@@ -139,15 +194,32 @@ exports.broadcast = async (req, res, next) => {
     const recipients = await resolveRecipients(target, req.companyId);
 
     const waMessage = linkTrimmed ? `${message}\n\n${linkTrimmed}` : message;
+    const targetLabel = await buildTargetLabel(target, req.companyId, recipients);
+    const historyBase = {
+      company_id: req.companyId,
+      sent_by: req.user.id,
+      channel,
+      title: title || null,
+      message,
+      link: linkTrimmed,
+      target_type: target.type,
+      target_label: targetLabel,
+      recipients: recipients.length,
+    };
 
     if (channel === 'whatsapp') {
       const waRecipients = recipients
         .filter(p => p.phone && String(p.phone).trim() !== '')
         .map(p => ({ phone: p.phone, name: `${p.first_name || ''} ${p.last_name || ''}`.trim() }));
 
+      const historyId = await saveBroadcastHistory(historyBase);
+
       // fire-and-forget
       WhatsAppService.sendBulkMessages(req.companyId, waRecipients, waMessage)
-        .then(result => console.log(`[Broadcast WA] companyId=${req.companyId} sent=${result.sent} failed=${result.failed}`))
+        .then(result => {
+          console.log(`[Broadcast WA] companyId=${req.companyId} sent=${result.sent} failed=${result.failed}`);
+          updateHistoryWaSent(historyId, result.sent);
+        })
         .catch(err => console.error('[Broadcast WA] Error en background:', err.message));
 
       return res.json({
@@ -172,7 +244,10 @@ exports.broadcast = async (req, res, next) => {
           linkTrimmed || '/'
         );
 
-        if (result && result.success === false) {
+        // Sin tokens (success === false) o con todos los envíos fallidos (successCount 0):
+        // el push no llegó, va por WhatsApp.
+        const delivered = !!(result && result.success !== false && (result.successCount === undefined || result.successCount > 0));
+        if (!delivered) {
           if (profile.phone && String(profile.phone).trim() !== '') {
             waFallback.push({ phone: profile.phone, name: `${profile.first_name || ''} ${profile.last_name || ''}`.trim() });
           }
@@ -187,10 +262,15 @@ exports.broadcast = async (req, res, next) => {
       }
     }
 
+    const historyId = await saveBroadcastHistory({ ...historyBase, push_sent: pushSent });
+
     // Fallback WhatsApp fire-and-forget
     if (waFallback.length > 0) {
       WhatsAppService.sendBulkMessages(req.companyId, waFallback, waMessage)
-        .then(result => console.log(`[Broadcast Fallback WA] sent=${result.sent} failed=${result.failed}`))
+        .then(result => {
+          console.log(`[Broadcast Fallback WA] sent=${result.sent} failed=${result.failed}`);
+          updateHistoryWaSent(historyId, result.sent);
+        })
         .catch(err => console.error('[Broadcast Fallback WA] Error en background:', err.message));
     }
 
@@ -201,6 +281,28 @@ exports.broadcast = async (req, res, next) => {
       push: { sent: pushSent, fallbackToWa: waFallback.length },
       whatsapp: { queued: waFallback.length }
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET /api/notifications/broadcasts — historial de envíos (solo admin/secretaria)
+exports.getBroadcasts = async (req, res, next) => {
+  try {
+    const requesterRole = await getRequesterRole(req.user.id);
+    if (!ALLOWED_ROLES.includes(requesterRole)) {
+      return res.status(403).json({ success: false, message: 'No tenés permisos para esta acción' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('notification_broadcasts')
+      .select('id, channel, title, message, link, target_type, target_label, recipients, push_sent, wa_sent, created_at')
+      .eq('company_id', req.companyId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+
+    res.json({ success: true, data: data || [] });
   } catch (error) {
     next(error);
   }
