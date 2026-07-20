@@ -50,7 +50,9 @@ class WhatsAppService {
         const folders = fs.readdirSync(authPath);
         for (const folder of folders) {
             if (!folder.startsWith('company_')) continue;
-            const companyId = folder.replace('company_', '');
+            // companyId como número: el resto del servicio (sendMessage, getStatus, crons)
+            // siempre lo maneja como number, y this.sessions es un Map (clave por tipo estricto).
+            const companyId = Number(folder.replace('company_', ''));
             const authFolder = path.join(authPath, folder);
 
             // Solo restaurar sesiones vinculadas de verdad. Carpetas sin vincular

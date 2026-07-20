@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const Sentry = require('@sentry/node');
 const BirthdayService = require('../services/birthdayService');
 const AbsenceService = require('../services/absenceService');
+const AttendanceReminderService = require('../services/attendanceReminderService');
 const WhatsAppService = require('../services/whatsappService');
 
 const initScheduledJobs = () => {
@@ -295,6 +296,30 @@ const initScheduledJobs = () => {
     });
 
     console.log('📅 Tarea programada: Verificación de ausencias diaria a las 08:40 AM');
+
+    // Verificación de asistencia sin tomar (8:35 AM) - Clases con actividad ayer sin asistencia registrada
+    cron.schedule('35 8 * * *', async () => {
+        console.log('⏰ [Cron Job] Ejecutando verificación de asistencia sin tomar (8:35 AM)...');
+        try {
+            const { supabaseAdmin } = require('../config/supabase');
+            const { data: companies } = await supabaseAdmin.from('companies').select('id');
+
+            if (companies) {
+                for (const company of companies) {
+                    const result = await AttendanceReminderService.checkMissingAttendance(company.id);
+                    console.log(`✅ [Cron Job] Asistencia sin tomar empresa ${company.id}:`, result);
+                }
+            }
+        } catch (error) {
+            console.error('❌ [Cron Job] Error en verificación de asistencia sin tomar:', error);
+            Sentry.captureException(error, { tags: { job: 'asistencia-no-tomada' } });
+        }
+    }, {
+        scheduled: true,
+        timezone: "America/Argentina/Buenos_Aires"
+    });
+
+    console.log('📅 Tarea programada: Verificación de asistencia sin tomar diaria a las 08:35 AM');
 
 };
 
