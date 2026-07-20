@@ -321,6 +321,30 @@ const initScheduledJobs = () => {
 
     console.log('📅 Tarea programada: Verificación de asistencia sin tomar diaria a las 08:35 AM');
 
+    // Cierre global de sesiones (00:00) - fuerza relogin diario en todas las empresas.
+    // Supabase no tiene revocación bulk de refresh tokens; en vez de eso marcamos
+    // sessions_invalidated_at y authMiddleware.js rechaza cualquier token emitido antes.
+    cron.schedule('0 0 * * *', async () => {
+        console.log('⏰ [Cron Job] Ejecutando cierre global de sesiones (00:00)...');
+        try {
+            const { supabaseAdmin } = require('../config/supabase');
+            const { error } = await supabaseAdmin
+                .from('companies')
+                .update({ sessions_invalidated_at: new Date().toISOString() })
+                .not('id', 'is', null);
+            if (error) throw error;
+            console.log('✅ [Cron Job] Sesiones invalidadas para todas las empresas.');
+        } catch (error) {
+            console.error('❌ [Cron Job] Error en cierre global de sesiones:', error);
+            Sentry.captureException(error, { tags: { job: 'cierre-sesiones' } });
+        }
+    }, {
+        scheduled: true,
+        timezone: "America/Argentina/Buenos_Aires"
+    });
+
+    console.log('📅 Tarea programada: Cierre global de sesiones diario a las 00:00');
+
 };
 
 module.exports = initScheduledJobs;

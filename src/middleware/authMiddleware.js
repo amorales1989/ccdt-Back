@@ -47,10 +47,11 @@ const authMiddleware = async (req, res, next) => {
 
         // Lógica de detección de Login fresco para evitar falsos positivos de inactividad
         let isFreshLogin = false;
+        let tokenIat = null;
         try {
             const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-            const iat = payload.iat * 1000;
-            const tokenAgeMs = now.getTime() - iat;
+            tokenIat = payload.iat;
+            const tokenAgeMs = now.getTime() - tokenIat * 1000;
 
             if (tokenAgeMs < 5 * 60 * 1000) {
                 isFreshLogin = true;
@@ -60,8 +61,8 @@ const authMiddleware = async (req, res, next) => {
         }
 
         if (!isFreshLogin && diff > INACTIVITY_LIMIT_MS) {
-            // Invalidar sesión en Supabase
-            await supabaseAdmin.auth.admin.signOut(user.id);
+            // Invalidar sesión en Supabase. signOut espera el JWT de la sesión (no el user id).
+            await supabaseAdmin.auth.admin.signOut(token, 'global');
 
             return res.status(401).json({
                 success: false,
@@ -124,9 +125,21 @@ const authMiddleware = async (req, res, next) => {
         // Bloqueo por empresa deshabilitada (ej: falta de pago). El system_admin ya retornó arriba.
         const { data: company } = await supabaseAdmin
             .from('companies')
-            .select('is_active, due_date')
+            .select('is_active, due_date, sessions_invalidated_at')
             .eq('id', req.companyId)
             .single();
+
+        // Cierre global de sesiones (cron 00:00, ver scheduler.js): Supabase no ofrece
+        // revocación bulk, así que en vez de invalidar cada refresh token marcamos un corte
+        // por empresa y acá rechazamos cualquier token emitido antes de ese corte.
+        if (company?.sessions_invalidated_at && tokenIat &&
+            tokenIat * 1000 < new Date(company.sessions_invalidated_at).getTime()) {
+            return res.status(401).json({
+                success: false,
+                code: 'SESSION_REVOKED',
+                message: 'Tu sesión fue cerrada. Por favor inicia sesión nuevamente.'
+            });
+        }
 
         const today = new Date().toISOString().slice(0, 10);
         const isExpired = company?.due_date && company.due_date < today;
