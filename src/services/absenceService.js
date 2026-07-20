@@ -143,7 +143,18 @@ class AbsenceService {
             });
             if (absentStudents.length === 0) continue;
 
-            // Reconstruir el inicio real de la racha (fecha más antigua sin cortes hasta hoy)
+            const { data: existingNotifs } = await supabaseAdmin
+                .from('student_absence_notifications')
+                .select('student_id, streak_start_date')
+                .eq('department_id', dept.id)
+                .eq('company_id', companyId);
+            const alreadyNotified = new Map((existingNotifs || []).map((r) => [r.student_id, r.streak_start_date]));
+
+            // Reconstruir el inicio real de la racha (fecha más antigua sin cortes hasta hoy).
+            // Si la racha excede LOOKBACK_WEEKS (nunca encontramos una presencia), el borde de
+            // la ventana se desliza una semana en cada corrida: si lo tomáramos tal cual, un
+            // alumno ausente hace mucho se "renotificaría" cada semana para siempre. En ese caso
+            // reusamos la fecha ya guardada para que quede fija mientras siga sin venir.
             const streakStartByStudent = new Map();
             absentStudents.forEach((s) => {
                 const present = presentDatesByStudent.get(s.id);
@@ -152,15 +163,10 @@ class AbsenceService {
                     if (present?.has(d)) break;
                     streakLen++;
                 }
-                streakStartByStudent.set(s.id, dates[streakLen - 1]);
+                const capped = streakLen === dates.length;
+                const priorStart = alreadyNotified.get(s.id);
+                streakStartByStudent.set(s.id, capped && priorStart ? priorStart : dates[streakLen - 1]);
             });
-
-            const { data: existingNotifs } = await supabaseAdmin
-                .from('student_absence_notifications')
-                .select('student_id, streak_start_date')
-                .eq('department_id', dept.id)
-                .eq('company_id', companyId);
-            const alreadyNotified = new Map((existingNotifs || []).map((r) => [r.student_id, r.streak_start_date]));
 
             // Solo los que arrancaron una racha nueva (o nunca fueron notificados)
             const newlyAbsentStudents = absentStudents.filter(
