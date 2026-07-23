@@ -345,6 +345,40 @@ id,
           throw err;
         }
 
+        // Si se editaron datos de la persona en el formulario al vincularla (nombre, teléfono,
+        // dirección, género, fecha de nacimiento), esos cambios se aplican a su ficha existente
+        // en vez de perderse. El documento no se toca acá: en el front queda deshabilitado al
+        // vincular, y cambiarlo requiere pasar por la validación de duplicados de un alta nueva.
+        const personUpdates = {};
+        if (first_name && first_name.trim() !== existing.first_name) personUpdates.first_name = first_name.trim();
+        if (last_name !== undefined && last_name.trim() !== (existing.last_name || '')) personUpdates.last_name = last_name.trim();
+        if (phone !== undefined && (phone || null) !== existing.phone) personUpdates.phone = phone || null;
+        if (address !== undefined && (address ? address.trim() : null) !== existing.address) personUpdates.address = address ? address.trim() : null;
+        if (gender && gender !== existing.gender) personUpdates.gender = gender;
+        if (birthdate !== undefined && (birthdate || null) !== existing.birthdate) personUpdates.birthdate = birthdate || null;
+        if (baptized !== undefined && (baptized === true) !== existing.baptized) personUpdates.baptized = baptized === true;
+
+        let currentPerson = existing;
+        if (Object.keys(personUpdates).length > 0) {
+          const { data: updated, error: updErr } = await supabase
+            .from('students')
+            .update(personUpdates)
+            .eq('id', existing.id)
+            .select('*, departments(name)')
+            .single();
+          if (updErr) throw updErr;
+          currentPerson = updated;
+
+          // Mismo motivo que en update(): get_students prioriza p.baptized sobre el del student.
+          if (currentPerson.profile_id && personUpdates.baptized !== undefined) {
+            await supabase
+              .from('profiles')
+              .update({ baptized: personUpdates.baptized })
+              .eq('id', currentPerson.profile_id)
+              .eq('company_id', req.companyId);
+          }
+        }
+
         const assignmentsToAdd = dept_assignments?.length
           ? dept_assignments
           : primaryDeptId
@@ -367,7 +401,7 @@ id,
         return res.status(200).json({
           success: true,
           message: 'Miembro existente vinculado al nuevo departamento',
-          data: { ...existing, department: existing.departments?.name || existing.department, is_deleted: false }
+          data: { ...currentPerson, department: currentPerson.departments?.name || currentPerson.department, is_deleted: false }
         });
       }
 
