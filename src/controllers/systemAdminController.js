@@ -234,14 +234,19 @@ const systemAdminController = {
       const notes = typeof req.body?.notes === 'string' ? req.body.notes : null;
       if (!Number.isFinite(amount) || amount < 0) return res.status(400).json({ success: false, message: 'Monto inválido' });
 
+      // Fecha de pago: opcional (ej. pagó ayer y lo registro hoy). Default: hoy.
+      const paymentDate = typeof req.body?.payment_date === 'string' ? req.body.payment_date : null;
+      if (paymentDate && !/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)) {
+        return res.status(400).json({ success: false, message: 'Fecha de pago inválida (formato YYYY-MM-DD)' });
+      }
+
       // Traer due_date actual para stackear si aún no venció
       const { data: comp, error: cErr } = await supabaseAdmin.from('companies').select('due_date').eq('id', id).single();
       if (cErr) throw cErr;
       if (!comp) return res.status(404).json({ success: false, message: 'Empresa no encontrada' });
 
-      const today = new Date();
-      const todayStr = today.toISOString().slice(0, 10);
-      const base = (comp.due_date && comp.due_date > todayStr) ? new Date(comp.due_date) : today;
+      const todayStr = paymentDate || new Date().toISOString().slice(0, 10);
+      const base = (comp.due_date && comp.due_date > todayStr) ? new Date(comp.due_date) : new Date(todayStr);
       const periodStart = new Date(base);
       const periodEnd = new Date(base);
       if (billing_cycle === 'anual') periodEnd.setFullYear(periodEnd.getFullYear() + 1);

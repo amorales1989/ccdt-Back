@@ -144,12 +144,18 @@ const authMiddleware = async (req, res, next) => {
         const today = new Date().toISOString().slice(0, 10);
         const isExpired = company?.due_date && company.due_date < today;
         if (company && (company.is_active === false || isExpired)) {
-            return res.status(403).json({
-                success: false,
-                code: 'COMPANY_INACTIVE',
-                role: profile?.role || null,
-                message: 'Empresa deshabilitada o con la suscripción vencida. Contactá al administrador del sistema.'
-            });
+            // Excepción: permitir los endpoints de suscripción aunque esté vencida, para que
+            // el admin pueda regularizar el pago (self-service). El resto queda bloqueado.
+            const isSubscriptionEndpoint = req.originalUrl.startsWith('/api/subscription');
+            if (!isSubscriptionEndpoint) {
+                return res.status(403).json({
+                    success: false,
+                    code: 'COMPANY_INACTIVE',
+                    role: profile?.role || null,
+                    message: 'Empresa deshabilitada o con la suscripción vencida. Contactá al administrador del sistema.'
+                });
+            }
+            req.companyInactive = true;
         }
 
         next();
