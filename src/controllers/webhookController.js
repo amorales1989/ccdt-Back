@@ -15,12 +15,18 @@ async function syncPreapprovalAmount(companyId) {
 
         const { data: planRow } = await supabaseAdmin
             .from('plans')
-            .select('price_monthly, pack_price_monthly')
+            .select('value, price_monthly, pack_price_monthly')
             .eq('value', comp.plan)
             .maybeSingle();
         if (!planRow) return;
 
-        const amount = recurringAmount(planRow, comp.extra_member_packs || 0, comp.billing_cycle);
+        const { count: member_count } = await supabaseAdmin
+            .from('students')
+            .select('id', { count: 'exact', head: true })
+            .eq('company_id', companyId)
+            .is('deleted_at', null);
+
+        const amount = recurringAmount(planRow, comp.extra_member_packs || 0, comp.billing_cycle, member_count || 0);
         await mercadopagoService.updatePreapprovalAmount(comp.mp_preapproval_id, amount);
     } catch (err) {
         console.error('⚠️ No se pudo actualizar el monto del preapproval:', err.message);

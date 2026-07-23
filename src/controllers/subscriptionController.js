@@ -1,6 +1,6 @@
 const { supabaseAdmin } = require('../config/supabase');
 const { createPreference, createPreapproval } = require('../services/mercadopagoService');
-const { PACK_SIZE, effectiveLimit } = require('../config/plans');
+const { PACK_SIZE, effectiveLimit, monthlyPrice } = require('../config/plans');
 
 // Endpoints de suscripción de la empresa. Scope siempre por req.companyId (multi-tenant).
 // Admin y secretaria pueden consultar/gestionar la suscripción (plan, packs, pagos).
@@ -27,9 +27,9 @@ function cyclePrice(monthly, billing_cycle) {
   return billing_cycle === 'anual' ? Number(monthly) * 10 : Number(monthly);
 }
 
-// Monto recurrente del preapproval: plan + packs, según ciclo.
-function recurringAmount(plan_row, packs, billing_cycle) {
-  const base = Number(plan_row.price_monthly) + Number(packs || 0) * Number(plan_row.pack_price_monthly);
+// Monto recurrente del preapproval: plan (según miembros actuales, ver monthlyPrice) + packs.
+function recurringAmount(plan_row, packs, billing_cycle, memberCount) {
+  const base = monthlyPrice(plan_row.value, plan_row.price_monthly, memberCount) + Number(packs || 0) * Number(plan_row.pack_price_monthly);
   return billing_cycle === 'anual' ? base * 10 : base;
 }
 
@@ -112,7 +112,7 @@ const subscriptionController = {
 
       const { data: planRow, error: pErr } = await supabaseAdmin
         .from('plans')
-        .select('price_monthly')
+        .select('value, price_monthly')
         .eq('value', company.plan)
         .maybeSingle();
       if (pErr) throw pErr;
@@ -121,7 +121,15 @@ const subscriptionController = {
         return res.status(400).json({ success: false, message: 'Plan sin precio, contactá al administrador' });
       }
 
-      const amount = billing_cycle === 'anual' ? Number(planRow.price_monthly) * 10 : Number(planRow.price_monthly);
+      const { count: member_count, error: sErr } = await supabaseAdmin
+        .from('students')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', req.companyId)
+        .is('deleted_at', null);
+      if (sErr) throw sErr;
+
+      const monthly = monthlyPrice(planRow.value, planRow.price_monthly, member_count || 0);
+      const amount = billing_cycle === 'anual' ? monthly * 10 : monthly;
       const externalReference = `renewal:${req.companyId}:${billing_cycle}:${Date.now()}`;
 
       const { init_point } = await createPreference({
@@ -156,7 +164,7 @@ const subscriptionController = {
 
       const { data: planRow, error: pErr } = await supabaseAdmin
         .from('plans')
-        .select('price_monthly, pack_price_monthly, label')
+        .select('value, price_monthly, pack_price_monthly, label')
         .eq('value', company.plan)
         .maybeSingle();
       if (pErr) throw pErr;
@@ -165,12 +173,19 @@ const subscriptionController = {
         return res.status(400).json({ success: false, message: 'Plan sin precio, contactá al administrador' });
       }
 
-      const amount = recurringAmount(planRow, company.extra_member_packs || 0, billing_cycle);
+      const { count: member_count, error: sErr } = await supabaseAdmin
+        .from('students')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', req.companyId)
+        .is('deleted_at', null);
+      if (sErr) throw sErr;
+
+      const amount = recurringAmount(planRow, company.extra_member_packs || 0, billing_cycle, member_count || 0);
       const frequency = billing_cycle === 'anual' ? 12 : 1;
       const externalReference = `sub:${req.companyId}:${Date.now()}`;
 
       const { id, init_point } = await createPreapproval({
-        reason: `Suscripción CCDT - ${planRow.label}`,
+        reason: `Suscripción Nexus - ${planRow.label}`,
         amount,
         frequency,
         payerEmail: req.user.email,
@@ -217,7 +232,9 @@ const subscriptionController = {
 
         const isUpgrade = Number(newPlan.price_monthly) > Number(ctx.curPlan.price_monthly);
         if (isUpgrade) {
-          const amount = Math.round((cyclePrice(newPlan.price_monthly, ctx.company.billing_cycle) - cyclePrice(ctx.curPlan.price_monthly, ctx.company.billing_cycle)) * factor);
+          const newMonthly = monthlyPrice(newPlan.value, newPlan.price_monthly, ctx.member_count);
+          const curMonthly = monthlyPrice(ctx.curPlan.value, ctx.curPlan.price_monthly, ctx.member_count);
+          const amount = Math.round((cyclePrice(newMonthly, ctx.company.billing_cycle) - cyclePrice(curMonthly, ctx.company.billing_cycle)) * factor);
           return res.json({ success: true, mode: 'charge', amount });
         }
 
@@ -276,7 +293,9 @@ const subscriptionController = {
         if (!process.env.MP_ACCESS_TOKEN) {
           return res.status(503).json({ success: false, message: 'Pagos no configurados (falta MP_ACCESS_TOKEN)' });
         }
-        const amount = Math.round((cyclePrice(newPlan.price_monthly, ctx.company.billing_cycle) - cyclePrice(ctx.curPlan.price_monthly, ctx.company.billing_cycle)) * factor);
+        const newMonthly = monthlyPrice(newPlan.value, newPlan.price_monthly, ctx.member_count);
+        const curMonthly = monthlyPrice(ctx.curPlan.value, ctx.curPlan.price_monthly, ctx.member_count);
+        const amount = Math.round((cyclePrice(newMonthly, ctx.company.billing_cycle) - cyclePrice(curMonthly, ctx.company.billing_cycle)) * factor);
         const externalReference = `change_plan:${req.companyId}:${planValue}:${Date.now()}`;
         const { init_point } = await createPreference({
           title: `Cambio de plan ${newPlan.label}`,
