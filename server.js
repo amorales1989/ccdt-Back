@@ -164,7 +164,7 @@ app.use((req, res, next) => {
   if (process.env.NODE_ENV !== 'production' || origin?.includes('localhost') || origin?.includes('127.0.0.1')) {
     res.setHeader('Access-Control-Allow-Origin', origin || '*');
   } else {
-    const allowedOrigins = ['https://ccdt.vercel.app'];
+    const allowedOrigins = ['https://ccdt.vercel.app', 'https://n-xus.com', 'https://www.n-xus.com'];
     if (allowedOrigins.includes(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
     }
