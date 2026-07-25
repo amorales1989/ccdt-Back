@@ -1,6 +1,7 @@
 const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const Sentry = require('@sentry/node');
 const { supabaseAdmin } = require('../config/supabase');
+const { sendTelegramAlert } = require('./telegramService');
 const path = require('path');
 const fs = require('fs');
 
@@ -179,8 +180,10 @@ class WhatsAppService {
                             `WhatsApp desvinculado en empresa ${companyId} — requiere re-escanear QR`,
                             { level: 'error', tags: { service: 'whatsapp', event: 'logout', companyId: String(companyId) } }
                         );
+                        sendTelegramAlert(`🔴 *WhatsApp DESVINCULADO* — empresa ${companyId}\n\nLa sesión se cerró (código ${statusCode}). Hay que re-escanear el QR desde el panel para volver a enviar.`);
                     } else if (wasReplaced) {
                         console.log(`ℹ️ [WhatsApp] Sesión de empresa ${companyId} desplazada por una conexión más reciente.`);
+                        sendTelegramAlert(`🟠 *WhatsApp REEMPLAZADO* — empresa ${companyId}\n\nOtra sesión tomó la cuenta (código 440). Suele ser un segundo proceso/dispositivo usando el mismo número. No se reconecta solo.`);
                     }
                 } else if (connection === 'open') {
                     console.log(`✅ [WhatsApp] ¡SESIÓN INICIADA! Empresa ${companyId} conectada.`);
@@ -242,23 +245,50 @@ class WhatsAppService {
         }
     }
 
+    /**
+     * Un socket con ws.readyState === 1 (OPEN) es el único estado en el que
+     * sock.sendMessage no tira "Connection Closed". Un socket presente pero
+     * conectando (0), cerrando (2) o cerrado (3) debe tratarse como no-listo.
+     */
+    isOpen(sock) {
+        return sock?.ws?.readyState === 1;
+    }
+
+    /**
+     * Espera hasta timeoutMs a que la sesión de la empresa quede OPEN.
+     * Resuelve con el socket OPEN, o null si no abrió a tiempo.
+     */
+    waitForOpen(companyId, timeoutMs = 20000) {
+        return new Promise((resolve) => {
+            const start = Date.now();
+            const check = () => {
+                const s = this.sessions.get(companyId);
+                if (this.isOpen(s)) return resolve(s);
+                if (Date.now() - start >= timeoutMs) return resolve(null);
+                setTimeout(check, 500);
+            };
+            check();
+        });
+    }
+
     async sendMessage(companyId, phoneNumber, message) {
         let sock = this.sessions.get(companyId);
 
-        if (!sock) {
-            // Reconectar solo si YA hay una sesión vinculada en disco. Nunca
-            // iniciar un flujo de QR nuevo desde un envío automático (ej: el
-            // scheduler iterando empresas sin WhatsApp vinculado): eso crearía
-            // un socket en loop 408 para una empresa que no tiene sesión.
+        // Un socket presente pero NO abierto (reconectando/cerrado tras una caída)
+        // igual entra por acá y tiraba "Connection Closed". Tratarlo como sin
+        // conexión: reconectar (si hay sesión vinculada en disco) y esperar a OPEN.
+        if (!this.isOpen(sock)) {
             const baseAuthDir = process.env.WHATSAPP_AUTH_DIR || path.join(__dirname, '../../auth');
             const authFolder = path.join(baseAuthDir, `company_${companyId}`);
             if (this.esSesionVinculada(authFolder)) {
+                // conectar() es no-op si ya hay un socket en curso; en ese caso
+                // solo esperamos a que ese termine de abrir.
                 await this.conectar(companyId);
-                sock = this.sessions.get(companyId);
+                sock = await this.waitForOpen(companyId, 20000);
             }
         }
 
-        if (!sock) {
+        if (!this.isOpen(sock)) {
             throw new Error('WhatsApp no conectado para esta empresa.');
         }
 
@@ -296,9 +326,17 @@ class WhatsAppService {
                 results.sent++;
                 console.log(`✅ [Bulk WA] ${i + 1}/${list.length} enviado a ${r.name || r.phone}`);
             } catch (err) {
-                results.failed++;
-                results.errors.push({ phone: r.phone, error: err.message });
-                console.error(`❌ [Bulk WA] ${i + 1}/${list.length} falló a ${r.phone}: ${err.message}`);
+                // Un reintento: sendMessage ya espera a que el socket vuelva a OPEN,
+                // así que si la caída fue transitoria el segundo intento entra bien.
+                try {
+                    await this.sendMessage(companyId, r.phone, text);
+                    results.sent++;
+                    console.log(`✅ [Bulk WA] ${i + 1}/${list.length} enviado a ${r.name || r.phone} (reintento)`);
+                } catch (err2) {
+                    results.failed++;
+                    results.errors.push({ phone: r.phone, error: err2.message });
+                    console.error(`❌ [Bulk WA] ${i + 1}/${list.length} falló a ${r.phone}: ${err2.message}`);
+                }
             }
 
             // Delay aleatorio 15-30s entre mensajes (no después del último)
