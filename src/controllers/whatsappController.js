@@ -18,9 +18,17 @@ const whatsappController = {
 
             if (error) throw error;
 
+            // El DB puede quedar 'connected' tras una caída (solo el logout lo revierte).
+            // La verdad está en el socket en memoria: si el DB dice connected pero no hay
+            // socket OPEN, reportar disconnected. No tocamos 'qr' (lo necesita el flujo de QR).
+            let status = data.whatsapp_status || 'disconnected';
+            if (status === 'connected' && WhatsAppService.getStatus(req.companyId) !== 'connected') {
+                status = 'disconnected';
+            }
+
             res.json({
                 success: true,
-                status: data.whatsapp_status || 'disconnected',
+                status,
                 qr: data.whatsapp_qr
             });
         } catch (error) {

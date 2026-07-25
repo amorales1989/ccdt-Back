@@ -351,8 +351,9 @@ class WhatsAppService {
     }
 
     getStatus(companyId) {
-        const sock = this.sessions.get(companyId);
-        return sock ? 'connected' : 'disconnected';
+        // Solo OPEN cuenta como conectado: un socket presente pero caído/reconectando
+        // reportaba 'connected' falsamente.
+        return this.isOpen(this.sessions.get(companyId)) ? 'connected' : 'disconnected';
     }
 }
 
