@@ -99,7 +99,10 @@ class WhatsAppService {
         // Evitar duplicados: Si ya hay un socket activo o conectando, no hacer nada
         if (this.sessions.has(companyId)) {
             const existingSock = this.sessions.get(companyId);
-            if (existingSock.ws?.readyState === 0 || existingSock.ws?.readyState === 1) {
+            // Baileys 7: usar los getters del wrapper (readyState no existe acá, siempre
+            // era undefined → el guard nunca disparaba y se creaban sockets duplicados
+            // que se pisaban con conflict/replaced).
+            if (existingSock.ws?.isOpen || existingSock.ws?.isConnecting) {
                 console.log(`[WhatsApp] Empresa ${companyId} ya tiene una conexión activa o en curso.`);
                 return;
             }
@@ -246,12 +249,12 @@ class WhatsAppService {
     }
 
     /**
-     * Un socket con ws.readyState === 1 (OPEN) es el único estado en el que
-     * sock.sendMessage no tira "Connection Closed". Un socket presente pero
-     * conectando (0), cerrando (2) o cerrado (3) debe tratarse como no-listo.
+     * OPEN es el único estado en el que sock.sendMessage no tira "Connection Closed".
+     * En Baileys 7 el socket real está en sock.ws.socket; el wrapper WebSocketClient
+     * expone el getter booleano `isOpen` (NO existe `readyState` en el wrapper).
      */
     isOpen(sock) {
-        return sock?.ws?.readyState === 1;
+        return sock?.ws?.isOpen === true;
     }
 
     /**
