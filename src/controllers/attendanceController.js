@@ -1,4 +1,4 @@
-const { supabase } = require('../config/supabase');
+const { supabase, supabaseAdmin } = require('../config/supabase');
 
 // Roles que pueden consultar la cobertura de asistencia
 const COVERAGE_ROLES = ['admin', 'secretaria', 'director', 'vicedirector', 'director_general'];
@@ -149,6 +149,64 @@ const attendanceController = {
             });
 
             res.json({ success: true, date: targetDate, departments: result });
+        } catch (error) {
+            next(error);
+        }
+    },
+
+    // GET /api/attendance/matrix?start=&end=[&department_id=][&department=][&assigned_class=]
+    // Matriz de asistencia ya agregada por el SP (una fila por alumno con un caracter por fecha).
+    matrix: async (req, res, next) => {
+        try {
+            const { start, end, department_id, department, assigned_class } = req.query;
+            const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
+
+            if (!isDate(start) || !isDate(end)) {
+                return res.status(400).json({ success: false, message: 'start y end deben tener formato YYYY-MM-DD' });
+            }
+            if (start > end) {
+                return res.status(400).json({ success: false, message: 'start no puede ser posterior a end' });
+            }
+            if (department_id && !/^[0-9a-f-]{36}$/i.test(department_id)) {
+                return res.status(400).json({ success: false, message: 'department_id inválido' });
+            }
+
+            // Scope: admin/secretaria ven toda la empresa; el resto solo sus departamentos.
+            let deptNames = department ? [department] : null;
+            if (!ALL_DEPT_ROLES.includes(req.profile?.role)) {
+                const own = req.profile?.departments || [];
+                if (own.length === 0) return res.json({ success: true, dates: [], rows: [] });
+                if (department && !own.includes(department)) {
+                    return res.status(403).json({ success: false, message: 'No tenés acceso a ese departamento' });
+                }
+                // Sin filtro explícito: limitar a los departamentos del perfil, no a toda la empresa.
+                if (!deptNames) deptNames = own;
+                // El department_id tambien tiene que ser de un depto propio.
+                if (department_id) {
+                    const { data: dept } = await supabaseAdmin
+                        .from('departments')
+                        .select('name')
+                        .eq('id', department_id)
+                        .eq('company_id', req.companyId)
+                        .maybeSingle();
+                    if (!dept || !own.includes(dept.name)) {
+                        return res.status(403).json({ success: false, message: 'No tenés acceso a ese departamento' });
+                    }
+                }
+            }
+
+            const { data, error } = await supabaseAdmin.schema('api').rpc('asistencia_matriz', {
+                p_company_id: req.companyId,
+                p_start: start,
+                p_end: end,
+                p_department_id: department_id || null,
+                p_department_names: deptNames,
+                p_assigned_class: (assigned_class && assigned_class !== 'all') ? assigned_class : null,
+            });
+
+            if (error) throw error;
+
+            res.json({ success: true, dates: data?.dates || [], rows: data?.rows || [] });
         } catch (error) {
             next(error);
         }

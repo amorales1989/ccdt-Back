@@ -67,3 +67,20 @@ Lo de abajo es especifico del backend.
 - Revisar `server.js`, el route y el controller involucrados, y el `authMiddleware` antes de editar.
 - No introducir un ORM, framework de validacion, ni capa nueva sin pedido explicito. Mantener el stack
   actual (Express + supabase-js).
+
+## 12. Toda consulta va por Stored Procedure (SP)
+- TODO endpoint nuevo consulta la DB via SP (`supabaseAdmin.rpc(...)`), no con queries encadenadas
+  desde el controller. La agregacion, los joins y los filtros los resuelve Postgres; el controller
+  solo valida input, aplica el scope por rol y devuelve la respuesta.
+- Si tocas un endpoint viejo que arma la consulta en JS (multiples `.from()`, joins anidados, filtrado
+  o agregacion en memoria), migralo a SP en ese mismo cambio. Ejemplo: `get_attendance_matrix`
+  reemplazo la descarga de miles de filas de `attendance` por un jsonb agregado.
+- Cada SP nuevo: va en `migrations/sp/` (un archivo por funcion, ver su README), en el schema `api`
+  con nombre `dominio_accion`, recibe `p_company_id` y filtra por el SIEMPRE, `STABLE`,
+  `SECURITY DEFINER` con `SET search_path = public, pg_temp`, y en el mismo script
+  `REVOKE ALL ... FROM PUBLIC, anon, authenticated` + `GRANT EXECUTE ... TO service_role`.
+  Nunca dejar un SP `SECURITY DEFINER` ejecutable por anon: la anon key viaja en el bundle del front.
+- Se llama con `supabaseAdmin.schema('api').rpc('nombre', { p_company_id: req.companyId, ... })`.
+- Excepciones razonables (no forzar SP): un CRUD de una sola tabla sin joins ni agregacion, o una
+  escritura simple. Si la consulta crece a joins/agregacion, pasa a SP.
+- Validar el SP corriendo la migracion contra la DB local de Supabase (docker) antes de declarar hecho.
