@@ -17,7 +17,15 @@ const topicRecordsController = {
             const isAdmin = user_role === 'admin' || user_role === 'secretaria';
 
             if (isMaestro) {
-                query = query.eq('created_by', user_id);
+                // Los registros son de la clase, no del maestro: un maestro ve todos los
+                // registros de su clase (department_id + assigned_class), incluidos los que
+                // cargaron otros maestros de la misma clase. Si falta el dato de clase no
+                // podemos aislar, así que caemos a mostrar solo lo propio.
+                if (department_id && assigned_class) {
+                    query = query.eq('department_id', department_id).eq('assigned_class', assigned_class);
+                } else {
+                    query = query.eq('created_by', user_id);
+                }
             } else if (isDirectorLevel || isAdmin) {
                 // directors: su dept_id viene del perfil (requerido para aislar); admins: filtros opcionales desde la UI
                 if (department_id) query = query.eq('department_id', department_id);
