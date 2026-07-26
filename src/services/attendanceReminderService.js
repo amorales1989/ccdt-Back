@@ -1,6 +1,7 @@
 const { supabase } = require('../config/supabase');
 const NotificationService = require('./notificationService');
 const WhatsAppService = require('./whatsappService');
+const { anyRole } = require('../utils/roleFilter');
 
 const norm = (v) => (v || '').toString().toLowerCase().trim();
 
@@ -101,7 +102,7 @@ class AttendanceReminderService {
             const { data: leaders } = await supabase
                 .from('profiles')
                 .select('id, first_name, phone, role, assigned_class')
-                .in('role', reminderRoles)
+                .or(anyRole(reminderRoles))
                 .eq('department_id', dept.id)
                 .eq('company_id', companyId);
             if (!leaders || leaders.length === 0) continue;

@@ -1,6 +1,7 @@
 const { supabase } = require('../config/supabase');
 const NotificationService = require('./notificationService');
 const WhatsAppService = require('./whatsappService');
+const { anyRole } = require('../utils/roleFilter');
 
 class BirthdayService {
     async checkDailyBirthdays(companyId = null) {
@@ -100,7 +101,7 @@ class BirthdayService {
                 const { data: leaders, error: leaderError } = await supabase
                     .from('profiles')
                     .select('id, first_name, last_name, email, phone, role, assigned_class')
-                    .in('role', birthdayRoles)
+                    .or(anyRole(birthdayRoles))
                     .eq('department_id', deptId)
                     .eq('company_id', companyId || 1);
 
@@ -172,7 +173,7 @@ class BirthdayService {
             const { data: directoresGenerales, error: dgError } = await supabase
                 .from('profiles')
                 .select('id, first_name, phone, departments')
-                .eq('role', 'director_general')
+                .or(anyRole(['director_general']))
                 .eq('company_id', companyId || 1);
 
             if (dgError) {

@@ -1,6 +1,7 @@
 const { messaging } = require('../config/firebase');
 const { supabase, supabaseAdmin } = require('../config/supabase');
 const MonitorService = require('./monitorService');
+const { anyRole } = require('../utils/roleFilter');
 
 class NotificationService {
   // Guarda la notificación en user_notifications para que el usuario pueda
@@ -145,11 +146,26 @@ class NotificationService {
   // Enviar a usuarios por rol
   async enviarPorRol(rol, notification, data = {}, link = '/', companyId = null) {
     try {
+      // El rol se resuelve contra `profiles` (rol primario + array `roles`), no contra
+      // la copia que guarda el token: esa copia se congela al registrar el dispositivo y
+      // queda desactualizada cuando al usuario le cambian el rol.
+      let pq = supabase.from('profiles').select('id').or(anyRole([rol]));
+      if (companyId) {
+        pq = pq.eq('company_id', companyId);
+      }
+      const { data: profiles, error: perfilError } = await pq;
+      if (perfilError) throw perfilError;
+
+      const usuarioIds = (profiles || []).map(p => p.id);
+      if (usuarioIds.length === 0) {
+        console.log('⚠️ No hay usuarios con el rol:', rol);
+        return { success: false, message: 'No hay usuarios con ese rol' };
+      }
 
       let q = supabase
         .from('usuarios_tokens_fcm')
         .select('token')
-        .eq('role', rol)
+        .in('usuario_id', usuarioIds)
         .eq('activo', true);
 
       if (companyId) {

@@ -1,6 +1,7 @@
 const { supabaseAdmin } = require('../config/supabase');
 const NotificationService = require('../services/notificationService');
 const WhatsAppService = require('../services/whatsappService');
+const { anyRole } = require('../utils/roleFilter');
 
 const maintenanceController = {
     notifyNewRequest: async (req, res, next) => {
@@ -66,7 +67,7 @@ const maintenanceController = {
                 const { data: profiles, error: secError } = await supabaseAdmin
                     .from('profiles')
                     .select('first_name, phone, role')
-                    .in('role', maintenanceRoles)
+                    .or(anyRole(maintenanceRoles))
                     .eq('company_id', companyId)
                     .not('phone', 'is', null);
 

@@ -44,10 +44,16 @@ const initScheduledJobs = () => {
             const { data: companies } = await supabaseAdmin.from('companies').select('id');
 
             if (companies) {
+                // El try va DENTRO del loop: una empresa sin WhatsApp vinculado hace que
+                // sendMessage tire, y con el catch afuera el primer fallo abortaba el resto.
                 for (const company of companies) {
-                    await WhatsAppService.sendMessage(company.id, monitorNumber,
-                        `☀️ *CCDT Bot - Reporte Matutino*\n\nEl sistema de WhatsApp está vinculado y operativo para la empresa ${company.id}.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}\n⏰ Hora: ${new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit' })}\n\n_Buen día._`
-                    );
+                    try {
+                        await WhatsAppService.sendMessage(company.id, monitorNumber,
+                            `☀️ *CCDT Bot - Reporte Matutino*\n\nEl sistema de WhatsApp está vinculado y operativo para la empresa ${company.id}.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}\n⏰ Hora: ${new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit' })}\n\n_Buen día._`
+                        );
+                    } catch (err) {
+                        console.warn(`⚠️ [Cron Job] Reporte matutino no enviado para empresa ${company.id}: ${err.message}`);
+                    }
                 }
             }
             console.log('✅ [Cron Job] Reportes matutinos enviados.');
@@ -73,10 +79,15 @@ const initScheduledJobs = () => {
             const { data: companies } = await supabaseAdmin.from('companies').select('id');
 
             if (companies) {
+                // Mismo motivo que en el reporte matutino: aislar el fallo por empresa.
                 for (const company of companies) {
-                    await WhatsAppService.sendMessage(company.id, monitorNumber,
-                        `🌙 *CCDT Bot - Reporte Nocturno*\n\nEl sistema sigue operativo y conectado para la empresa ${company.id} para cerrar el día.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}\n⏰ Hora: ${new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit' })}\n\n_Hasta mañana._ 💤`
-                    );
+                    try {
+                        await WhatsAppService.sendMessage(company.id, monitorNumber,
+                            `🌙 *CCDT Bot - Reporte Nocturno*\n\nEl sistema sigue operativo y conectado para la empresa ${company.id} para cerrar el día.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}\n⏰ Hora: ${new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit' })}\n\n_Hasta mañana._ 💤`
+                        );
+                    } catch (err) {
+                        console.warn(`⚠️ [Cron Job] Reporte nocturno no enviado para empresa ${company.id}: ${err.message}`);
+                    }
                 }
             }
             console.log('✅ [Cron Job] Reportes nocturnos enviados.');

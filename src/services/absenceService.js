@@ -1,6 +1,7 @@
 const { supabase, supabaseAdmin } = require('../config/supabase');
 const NotificationService = require('./notificationService');
 const WhatsAppService = require('./whatsappService');
+const { anyRole } = require('../utils/roleFilter');
 
 const ABSENCE_WEEKS = 4;
 // Tope de historial para reconstruir el inicio real de una racha de ausencias.
@@ -177,7 +178,7 @@ class AbsenceService {
             const { data: leaders } = await supabase
                 .from('profiles')
                 .select('id, first_name, phone, role, assigned_class')
-                .in('role', absenceRoles)
+                .or(anyRole(absenceRoles))
                 .eq('department_id', dept.id)
                 .eq('company_id', companyId);
             if (!leaders || leaders.length === 0) continue;

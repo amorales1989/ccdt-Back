@@ -7,6 +7,7 @@ const MonitorService = require('../services/monitorService');
 
 
 const { Resend } = require('resend');
+const { anyRole } = require('../utils/roleFilter');
 
 const resend = new Resend('re_UV2bZBBj_5DpDPTZM2KnYnFfZ3ejNzoXr');
 
@@ -353,7 +354,7 @@ const eventsController = {
         const { data: secretaries, error: secError } = await supabaseAdmin
           .from('profiles')
           .select('first_name, phone')
-          .in('role', ['secretaria', 'secr.-calendario'])
+          .or(anyRole(['secretaria', 'secr.-calendario']))
           .eq('company_id', req.companyId);
 
         if (secError) throw secError;
