@@ -9,10 +9,10 @@ function effectiveLimit(plan, packs) {
 }
 
 // Corporativo es el único plan sin precio fijo: price_monthly en la tabla `plans` guarda el
-// piso ($60.000), y a partir de CORPORATIVO_INCLUDED_MEMBERS se suma un adicional por cada
+// piso ($85.000), y a partir de CORPORATIVO_INCLUDED_MEMBERS se suma un adicional por cada
 // miembro de más. Los demás planes cobran siempre price_monthly tal cual está en la tabla.
 const CORPORATIVO_INCLUDED_MEMBERS = 750;
-const CORPORATIVO_PRICE_PER_EXTRA_MEMBER = 60;
+const CORPORATIVO_PRICE_PER_EXTRA_MEMBER = 80;
 
 // Precio mensual efectivo de un plan según la cantidad de miembros actual.
 function monthlyPrice(planValue, basePriceMonthly, memberCount) {

@@ -44,8 +44,6 @@ const initScheduledJobs = () => {
             const { data: companies } = await supabaseAdmin.from('companies').select('id');
 
             if (companies) {
-                // El try va DENTRO del loop: una empresa sin WhatsApp vinculado hace que
-                // sendMessage tire, y con el catch afuera el primer fallo abortaba el resto.
                 for (const company of companies) {
                     try {
                         await WhatsAppService.sendMessage(company.id, monitorNumber,
