@@ -6,4 +6,7 @@ config/serviceAccountKey.json
 auth_info_baileys/
 auth/
 
+# Los dumps/backups quedan afuera: son datos reales (DNI, telefonos) que no van al repo.
 *.sql
+# Solo los stored procedures se versionan.
+!migrations/sp/*.sql
