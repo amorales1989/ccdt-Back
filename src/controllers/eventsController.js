@@ -313,7 +313,7 @@ const eventsController = {
             MonitorService.logEmail(adminEmails, `Solicitud: ${eventTitle}`, 'success', 'Webhook n8n enviado');
           })
             .catch(err => {
-              console.error('[CCDT] n8n Error:', err.message);
+              console.error('[Nexus] n8n Error:', err.message);
               MonitorService.logEmail(adminEmails, `Solicitud: ${eventTitle}`, 'failure', `Error Webhook n8n: ${err.message}`);
             });
         } else {
@@ -363,8 +363,8 @@ const eventsController = {
 
         // Unificar admin + secretarias en una sola cola con delay 15-30s entre envíos
         const adminPhone = '1159080306';
-        const adminWaText = baseWaText + `*Descripción:* ${description || 'Sin descripción'}\n\n_Mensaje automático de CCDT_`;
-        const secWaText = baseWaText + `_Mensaje automático de CCDT_`;
+        const adminWaText = baseWaText + `*Descripción:* ${description || 'Sin descripción'}\n\n_Mensaje automático de Nexus_`;
+        const secWaText = baseWaText + `_Mensaje automático de Nexus_`;
 
         const waQueue = [{ phone: adminPhone, message: adminWaText, name: 'Admin principal' }];
         if (secretaries && secretaries.length > 0) {
@@ -376,9 +376,9 @@ const eventsController = {
         // Fire-and-forget para no bloquear la respuesta HTTP
         WhatsAppService.sendBulkMessages(req.companyId, waQueue)
           .then(r => console.log(`✅ Alertas de nueva solicitud enviadas. Enviados: ${r.sent}, Fallidos: ${r.failed}.`))
-          .catch(err => console.error('[CCDT] Error enviando cola WA nueva solicitud:', err.message));
+          .catch(err => console.error('[Nexus] Error enviando cola WA nueva solicitud:', err.message));
       } catch (waError) {
-        console.error('[CCDT] WA Secretary Error:', waError.message);
+        console.error('[Nexus] WA Secretary Error:', waError.message);
       }
 
       // Respondemos OK al cliente independientemente de n8n/FCM (fire and forget)
@@ -459,7 +459,7 @@ const eventsController = {
             MonitorService.logEmail(requesterEmail, `Respuesta: ${eventTitle}`, 'success', 'Webhook n8n enviado');
           })
             .catch(err => {
-              console.error('[CCDT] n8n Response Error:', err.message);
+              console.error('[Nexus] n8n Response Error:', err.message);
               MonitorService.logEmail(requesterEmail, `Respuesta: ${eventTitle}`, 'failure', `Error Webhook n8n: ${err.message}`);
             });
         } else {
@@ -468,7 +468,7 @@ const eventsController = {
         }
 
       } catch (n8nError) {
-        console.error('[CCDT] n8n Sync Error:', n8nError.message);
+        console.error('[Nexus] n8n Sync Error:', n8nError.message);
       }
 
       // ✅ Enviar notificación push FCM al solicitante
@@ -502,7 +502,7 @@ const eventsController = {
           pushDelivered = !!(pushResult && pushResult.success !== false && (pushResult.successCount === undefined || pushResult.successCount > 0));
         }
       } catch (fcmError) {
-        console.error('[CCDT] FCM Response Error:', fcmError.message);
+        console.error('[Nexus] FCM Response Error:', fcmError.message);
       }
 
       // ✅ Notificar a todos los usuarios de la empresa (perfiles con acceso al sistema).
@@ -546,7 +546,7 @@ const eventsController = {
               .catch(err => console.error('[Evento aprobado WA] Error:', err.message));
           }
         };
-        notifyCompany().catch(err => console.error('[CCDT] Error notificando evento aprobado a la empresa:', err.message));
+        notifyCompany().catch(err => console.error('[Nexus] Error notificando evento aprobado a la empresa:', err.message));
       }
 
       // ✅ Enviar notificación WhatsApp al solicitante SOLO si el push no llegó

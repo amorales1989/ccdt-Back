@@ -213,7 +213,7 @@ class AbsenceService {
                 if (leader.phone) {
                     waQueue.push({
                         phone: leader.phone,
-                        message: `⚠️ *Ausencias en ${dept.name}*\n\n${body}\n\n_Enviado automáticamente por CCDT Bot_`,
+                        message: `⚠️ *Ausencias en ${dept.name}*\n\n${body}\n\n_Enviado automáticamente por Nexus Bot_`,
                         name: leader.first_name,
                         leaderId: leader.id,
                         dept: dept.name,

@@ -200,7 +200,7 @@ app.use(express.urlencoded({ extended: true }));
 app.get('/', (req, res) => {
   res.json({
     success: true,
-    message: 'CCDT Backend API',
+    message: 'Nexus Backend API',
     version: '1.0.0',
     timestamp: new Date().toISOString(),
     endpoints: {

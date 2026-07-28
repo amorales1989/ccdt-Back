@@ -152,7 +152,7 @@ class BirthdayService {
 
                         // B. Notificación WhatsApp (Baileys) — encolar para envío secuencial con delay
                         if (leader.phone) {
-                            const waText = `🎂 *¡Cumpleaños en ${deptName}!* 🎂\n\n${body}\n\n_Enviado automáticamente por CCDT Bot_`;
+                            const waText = `🎂 *¡Cumpleaños en ${deptName}!* 🎂\n\n${body}\n\n_Enviado automáticamente por Nexus Bot_`;
                             waQueue.push({
                                 phone: leader.phone,
                                 message: waText,
@@ -218,7 +218,7 @@ class BirthdayService {
                 if (dg.phone) {
                     waQueue.push({
                         phone: dg.phone,
-                        message: `🎂 *¡Cumpleaños de obreros!* 🎂\n\n${body}\n\n_Enviado automáticamente por CCDT Bot_`,
+                        message: `🎂 *¡Cumpleaños de obreros!* 🎂\n\n${body}\n\n_Enviado automáticamente por Nexus Bot_`,
                         name: dg.first_name,
                         leaderId: dg.id,
                         dept: 'obreros',

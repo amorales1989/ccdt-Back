@@ -61,7 +61,7 @@ const webhookController = {
             if (isNewPhone) {
                 console.log(`🤖 Detectado nuevo número para ${name}: ${phone}. Enviando presentación...`);
 
-                const message = `¡Hola ${name}! Soy el bot de *CCDT*. 🤖\n\nBienvenido/a. Este será tu canal oficial para recibir notificaciones automáticas relevantes.\n\nNo es necesario que respondas a este mensaje. ¡Que tengas un gran día! ⚡`;
+                const message = `¡Hola ${name}! Soy el bot de *Nexus*. 🤖\n\nBienvenido/a. Este será tu canal oficial para recibir notificaciones automáticas relevantes.\n\nNo es necesario que respondas a este mensaje. ¡Que tengas un gran día! ⚡`;
 
                 // Enviar mensaje
                 const result = await WhatsAppService.sendMessage(record.company_id || 1, phone, message);
@@ -122,7 +122,7 @@ const webhookController = {
                 const time = record.time ? `\n⏰ *Hora:* ${record.time}` : '';
                 const desc = record.description ? `\n📝 *Descripción:* ${record.description}` : '';
 
-                const broadcastMessage = `${header}\n\n📌 *Título:* ${record.title}\n📅 *Fecha:* ${formattedDate}${time}${desc}\n\n_Mensaje automático de CCDT_`;
+                const broadcastMessage = `${header}\n\n📌 *Título:* ${record.title}\n📅 *Fecha:* ${formattedDate}${time}${desc}\n\n_Mensaje automático de Nexus_`;
 
                 console.log(`🚀 Iniciando difusión de evento: ${record.title}`);
 
@@ -155,7 +155,7 @@ const webhookController = {
                 return res.status(500).json({ success: false, message: 'MONITOR_WHATSAPP_NUMBER no configurado' });
             }
 
-            const message = `✅ *CCDT Bot - Vercel Health Check*\n\nInformo que el sistema de WhatsApp está recibiendo las llamadas de Vercel Cron correctamente.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}\n⏰ Hora Actual: ${new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit' })}\n\n_Seguimos en línea._ ⚡`;
+            const message = `✅ *Nexus Bot - Vercel Health Check*\n\nInformo que el sistema de WhatsApp está recibiendo las llamadas de Vercel Cron correctamente.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}\n⏰ Hora Actual: ${new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit' })}\n\n_Seguimos en línea._ ⚡`;
 
             // sendMessage(companyId, phoneNumber, message): el health-check se envía
             // AL número monitor usando la sesión de la empresa 1 (la del sistema).

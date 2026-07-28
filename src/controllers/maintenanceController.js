@@ -32,7 +32,7 @@ const maintenanceController = {
             }[String(priority).toLowerCase()] || '🟡 Normal';
 
             const baseWaText = `🔧 *Nueva Solicitud de Mantenimiento*\n\n*Asunto:* ${title}\n*Ubicación:* ${location || '📍 No especificada'}\n*Solicitante:* ${requesterName}\n*Prioridad:* ${priorityEmoji}\n\n`;
-            const fullWaText = baseWaText + `*Descripción:* ${description || 'Sin descripción'}\n\n_Mensaje automático de CCDT_`;
+            const fullWaText = baseWaText + `*Descripción:* ${description || 'Sin descripción'}\n\n_Mensaje automático de Nexus_`;
 
             // Leer roles configurados para notificaciones de mantenimiento
             const { data: companyConfig } = await supabaseAdmin

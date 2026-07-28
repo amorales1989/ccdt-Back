@@ -130,7 +130,7 @@ class AttendanceReminderService {
                 if (leader.phone) {
                     waQueue.push({
                         phone: leader.phone,
-                        message: `📋 *Asistencia sin tomar en ${dept.name}*\n\n${body}\n\n_Enviado automáticamente por CCDT Bot_`,
+                        message: `📋 *Asistencia sin tomar en ${dept.name}*\n\n${body}\n\n_Enviado automáticamente por Nexus Bot_`,
                         name: leader.first_name,
                         leaderId: leader.id,
                         dept: dept.name,

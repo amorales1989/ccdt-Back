@@ -47,7 +47,7 @@ const initScheduledJobs = () => {
                 for (const company of companies) {
                     try {
                         await WhatsAppService.sendMessage(company.id, monitorNumber,
-                            `☀️ *CCDT Bot - Reporte Matutino*\n\nEl sistema de WhatsApp está vinculado y operativo para la empresa ${company.id}.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}\n⏰ Hora: ${new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit' })}\n\n_Buen día._`
+                            `☀️ *Nexus Bot - Reporte Matutino*\n\nEl sistema de WhatsApp está vinculado y operativo para la empresa ${company.id}.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}\n⏰ Hora: ${new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit' })}\n\n_Buen día._`
                         );
                     } catch (err) {
                         console.warn(`⚠️ [Cron Job] Reporte matutino no enviado para empresa ${company.id}: ${err.message}`);
@@ -81,7 +81,7 @@ const initScheduledJobs = () => {
                 for (const company of companies) {
                     try {
                         await WhatsAppService.sendMessage(company.id, monitorNumber,
-                            `🌙 *CCDT Bot - Reporte Nocturno*\n\nEl sistema sigue operativo y conectado para la empresa ${company.id} para cerrar el día.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}\n⏰ Hora: ${new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit' })}\n\n_Hasta mañana._ 💤`
+                            `🌙 *Nexus Bot - Reporte Nocturno*\n\nEl sistema sigue operativo y conectado para la empresa ${company.id} para cerrar el día.\n\n📅 Fecha: ${new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}\n⏰ Hora: ${new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit' })}\n\n_Hasta mañana._ 💤`
                         );
                     } catch (err) {
                         console.warn(`⚠️ [Cron Job] Reporte nocturno no enviado para empresa ${company.id}: ${err.message}`);
@@ -249,9 +249,9 @@ const initScheduledJobs = () => {
 
                 let message = null;
                 if (diffDays > 0 && REMIND_DAYS.includes(diffDays)) {
-                    message = `⚠️ *CCDT — Suscripción por vencer*\n\nTu suscripción vence el ${due.toLocaleDateString('es-AR')} (en ${diffDays} día${diffDays === 1 ? '' : 's'}).\n\nRenovala desde *Configuración › Plan* para no interrumpir el servicio.`;
+                    message = `⚠️ *Nexus — Suscripción por vencer*\n\nTu suscripción vence el ${due.toLocaleDateString('es-AR')} (en ${diffDays} día${diffDays === 1 ? '' : 's'}).\n\nRenovala desde *Configuración › Plan* para no interrumpir el servicio.`;
                 } else if (diffDays === 0) {
-                    message = `🔴 *CCDT — Suscripción vencida hoy*\n\nRegularizá el pago desde *Configuración › Plan* para mantener el acceso activo.`;
+                    message = `🔴 *Nexus — Suscripción vencida hoy*\n\nRegularizá el pago desde *Configuración › Plan* para mantener el acceso activo.`;
                 }
                 if (!message) continue;
 
