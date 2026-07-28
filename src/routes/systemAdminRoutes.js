@@ -31,6 +31,18 @@ router.post('/companies/:id/payments', systemAdminController.recordPayment);
 // GET /api/system/companies/:id/payments - Historial de pagos de una empresa
 router.get('/companies/:id/payments', systemAdminController.getCompanyPayments);
 
+// POST /api/system/companies/:id/free-months - Otorgar meses de cortesía (extiende el vencimiento)
+router.post('/companies/:id/free-months', systemAdminController.grantFreeMonths);
+
+// GET /api/system/badges - Catálogo de insignias
+router.get('/badges', systemAdminController.listBadges);
+
+// POST /api/system/companies/:id/badges - Otorgar insignia a una empresa
+router.post('/companies/:id/badges', systemAdminController.grantBadge);
+
+// DELETE /api/system/companies/:id/badges/:badgeId - Quitar insignia
+router.delete('/companies/:id/badges/:badgeId', systemAdminController.revokeBadge);
+
 // GET /api/system/plans - Listar planes con precios
 router.get('/plans', systemAdminController.getPlans);
 

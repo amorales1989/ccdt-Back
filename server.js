@@ -141,6 +141,13 @@ try {
   console.error('❌ Error loading subscription routes:', error.message);
 }
 
+let companyRoutes;
+try {
+  companyRoutes = require('./src/routes/companyRoutes');
+} catch (error) {
+  console.error('❌ Error loading company routes:', error.message);
+}
+
 let smallGroupsRoutes;
 try {
   smallGroupsRoutes = require('./src/routes/smallGroupsRoutes');
@@ -299,6 +306,10 @@ if (systemAdminRoutes) {
 
 if (subscriptionRoutes) {
   app.use('/api/subscription', authMiddleware, subscriptionRoutes);
+}
+
+if (companyRoutes) {
+  app.use('/api/company', authMiddleware, companyRoutes);
 }
 
 if (smallGroupsRoutes) {

@@ -49,10 +49,23 @@ const systemAdminController = {
         if (s.company_id != null) memberCounts[s.company_id] = (memberCounts[s.company_id] || 0) + 1;
       }
 
+      // Insignias por empresa
+      const { data: cbs, error: bErr } = await supabaseAdmin
+        .from('company_badges')
+        .select('company_id, badge_id, granted_at, badges(id, code, label, description, icon, color, tier)');
+      if (bErr) throw bErr;
+
+      const badgesByCompany = {};
+      for (const cb of cbs || []) {
+        if (!cb.badges) continue;
+        (badgesByCompany[cb.company_id] ||= []).push({ ...cb.badges, granted_at: cb.granted_at });
+      }
+
       const data = companies.map((c) => ({
         ...c,
         user_count: userCounts[c.id] || 0,
         member_count: memberCounts[c.id] || 0,
+        badges: badgesByCompany[c.id] || [],
       }));
       res.json({ success: true, data, count: data.length });
     } catch (error) {
@@ -266,6 +279,112 @@ const systemAdminController = {
         .single();
       if (error) throw error;
       res.json({ success: true, data });
+    } catch (error) { next(error); }
+  },
+
+  // POST /api/system/companies/:id/free-months
+  // Meses de cortesía (ej: promo fundadoras). Extiende due_date sin cobrar y deja
+  // el registro en `payments` con monto 0 y source 'cortesia' para trazabilidad.
+  grantFreeMonths: async (req, res, next) => {
+    try {
+      if (!ensureSystemAdmin(req, res)) return;
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) return res.status(400).json({ success: false, message: 'ID de empresa inválido' });
+
+      const months = parseInt(req.body?.months, 10);
+      if (!Number.isInteger(months) || months < 1 || months > 36) {
+        return res.status(400).json({ success: false, message: 'Cantidad de meses inválida (1 a 36)' });
+      }
+      const notes = typeof req.body?.notes === 'string' && req.body.notes.trim() ? req.body.notes.trim() : 'Meses de cortesía';
+
+      const { data: comp, error: cErr } = await supabaseAdmin.from('companies').select('due_date').eq('id', id).single();
+      if (cErr) throw cErr;
+      if (!comp) return res.status(404).json({ success: false, message: 'Empresa no encontrada' });
+
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const base = (comp.due_date && comp.due_date > todayStr) ? new Date(comp.due_date) : new Date(todayStr);
+      const periodEnd = new Date(base);
+      periodEnd.setMonth(periodEnd.getMonth() + months);
+      const due = periodEnd.toISOString().slice(0, 10);
+
+      const { error: payErr } = await supabaseAdmin.from('payments').insert({
+        company_id: id, amount: 0, billing_cycle: 'mensual', source: 'cortesia', notes,
+        period_start: base.toISOString().slice(0, 10), period_end: due,
+      });
+      if (payErr) throw payErr;
+
+      const { data, error } = await supabaseAdmin.from('companies')
+        .update({ due_date: due, is_active: true })
+        .eq('id', id)
+        .select('id, name, congregation_name, is_active, created_at, plan, extra_member_packs, billing_cycle, last_payment_date, due_date')
+        .single();
+      if (error) throw error;
+      res.json({ success: true, data });
+    } catch (error) { next(error); }
+  },
+
+  // GET /api/system/badges - Catálogo de insignias
+  listBadges: async (req, res, next) => {
+    try {
+      if (!ensureSystemAdmin(req, res)) return;
+      const { data, error } = await supabaseAdmin
+        .from('badges')
+        .select('*')
+        .order('sort')
+        .order('id');
+      if (error) throw error;
+      res.json({ success: true, data: data || [] });
+    } catch (error) { next(error); }
+  },
+
+  // POST /api/system/companies/:id/badges - Otorgar insignia
+  grantBadge: async (req, res, next) => {
+    try {
+      if (!ensureSystemAdmin(req, res)) return;
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id)) return res.status(400).json({ success: false, message: 'ID de empresa inválido' });
+
+      const badgeId = parseInt(req.body?.badge_id, 10);
+      const code = typeof req.body?.code === 'string' ? req.body.code.trim() : null;
+      if (!Number.isInteger(badgeId) && !code) {
+        return res.status(400).json({ success: false, message: 'badge_id o code requerido' });
+      }
+
+      const query = supabaseAdmin.from('badges').select('id, is_active');
+      const { data: badge, error: bErr } = await (Number.isInteger(badgeId)
+        ? query.eq('id', badgeId)
+        : query.eq('code', code)).maybeSingle();
+      if (bErr) throw bErr;
+      if (!badge) return res.status(404).json({ success: false, message: 'Insignia no encontrada' });
+
+      const { error } = await supabaseAdmin
+        .from('company_badges')
+        .upsert(
+          { company_id: id, badge_id: badge.id, notes: typeof req.body?.notes === 'string' ? req.body.notes : null },
+          { onConflict: 'company_id,badge_id' }
+        );
+      if (error) throw error;
+
+      res.json({ success: true });
+    } catch (error) { next(error); }
+  },
+
+  // DELETE /api/system/companies/:id/badges/:badgeId - Quitar insignia
+  revokeBadge: async (req, res, next) => {
+    try {
+      if (!ensureSystemAdmin(req, res)) return;
+      const id = parseInt(req.params.id, 10);
+      const badgeId = parseInt(req.params.badgeId, 10);
+      if (!Number.isInteger(id) || !Number.isInteger(badgeId)) {
+        return res.status(400).json({ success: false, message: 'Parámetros inválidos' });
+      }
+      const { error } = await supabaseAdmin
+        .from('company_badges')
+        .delete()
+        .eq('company_id', id)
+        .eq('badge_id', badgeId);
+      if (error) throw error;
+      res.json({ success: true });
     } catch (error) { next(error); }
   },
 
