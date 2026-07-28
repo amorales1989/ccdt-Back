@@ -110,6 +110,9 @@ try {
   console.error('❌ Error loading attendance routes:', error.message);
 }
 
+// Sin try/catch: si esta ruta no carga tiene que reventar acá y no responder 200 vacío.
+const statsRoutes = require('./src/routes/statsRoutes');
+
 let accountingRoutes;
 try {
   accountingRoutes = require('./src/routes/accountingRoutes');
@@ -279,6 +282,8 @@ if (profilesRoutes) {
 if (attendanceRoutes) {
   app.use('/api/attendance', authMiddleware, attendanceRoutes);
 }
+
+app.use('/api/stats', authMiddleware, statsRoutes);
 
 if (accountingRoutes) {
   app.use('/api/accounting', authMiddleware, accountingRoutes);
