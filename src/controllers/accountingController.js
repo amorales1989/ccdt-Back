@@ -205,36 +205,23 @@ const accountingController = {
       const allowed = await allowedDeptIds(req);
       if (!allowed.includes(department_id)) throw err('Sin acceso a este departamento', 403);
 
-      let txQuery = supabaseAdmin
-        .from('accounting_transactions')
-        .select('type, amount')
-        .eq('company_id', req.companyId)
-        .eq('department_id', department_id);
-      if (from) txQuery = txQuery.gte('movement_date', from);
-      if (to) txQuery = txQuery.lte('movement_date', to);
+      // El SP suma en la DB: antes se traían todas las transacciones del rango para sumarlas
+      // en un for, y sin paginar se cortaban en 1000 (balance mal, sin error visible).
+      const { data, error } = await supabaseAdmin.schema('api').rpc('contabilidad_balance', {
+        p_company_id: req.companyId,
+        p_department_id: department_id,
+        p_from: from || null,
+        p_to: to || null,
+      });
+      if (error) throw error;
 
-      const [{ data: txs, error: e1 }, { data: ob, error: e2 }] = await Promise.all([
-        txQuery,
-        supabaseAdmin.from('accounting_opening_balances')
-          .select('opening_balance')
-          .eq('company_id', req.companyId).eq('department_id', department_id).maybeSingle()
-      ]);
-      if (e1) throw e1;
-      if (e2) throw e2;
-
-      const opening = Number(ob?.opening_balance || 0);
-      let ingresos = 0, egresos = 0;
-      for (const t of txs || []) {
-        if (t.type === 'ingreso') ingresos += Number(t.amount);
-        else egresos += Number(t.amount);
-      }
       res.json({
         success: true,
         data: {
-          opening_balance: opening,
-          total_ingresos: ingresos,
-          total_egresos: egresos,
-          balance: opening + ingresos - egresos
+          opening_balance: Number(data?.opening_balance || 0),
+          total_ingresos: Number(data?.total_ingresos || 0),
+          total_egresos: Number(data?.total_egresos || 0),
+          balance: Number(data?.balance || 0)
         }
       });
     } catch (error) { next(error); }
