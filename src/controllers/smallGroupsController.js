@@ -1,4 +1,4 @@
-const { supabase } = require('../config/supabase');
+const { supabase, supabaseAdmin } = require('../config/supabase');
 const { assertMemberLimitNotReached } = require('../services/memberLimitService');
 
 // Administran (crear/editar/archivar/roster) TODOS los grupos de la empresa, cualquier depto.
@@ -141,41 +141,29 @@ const attachLeaders = async (groups, companyId) => {
 
 const smallGroupsController = {
     // GET /api/small-groups?status=active|archived (default: active)
+    // El SP api.grupos_listar resuelve visibilidad, líderes y member_count en una sola consulta:
+    // antes se traían todos los grupos + todos los miembros activos de todos ellos (sin paginar)
+    // para contar y filtrar en JS.
     getAll: async (req, res, next) => {
         try {
             const statusFilter = req.query.status === 'archived' ? 'archived' : 'active';
-            const { data: groups, error } = await supabase
-                .from('small_groups')
-                .select('*')
-                .eq('company_id', req.companyId)
-                .eq('status', statusFilter)
-                .order('name');
+            const isGlobal = GLOBAL_VISIBILITY_ROLES.includes(req.profile?.role);
+
+            // Alcance por departamento segun rol. null/vacío => solo ve los grupos donde es
+            // miembro activo (lo resuelve el propio SP).
+            const deptIds = isGlobal ? null : await resolveVisibleDepartmentIds(req);
+
+            const { data, error } = await supabaseAdmin.schema('api').rpc('grupos_listar', {
+                p_company_id: req.companyId,
+                p_status: statusFilter,
+                p_profile_id: req.user.id,
+                p_department_ids: deptIds ? Array.from(deptIds) : null,
+                p_global: isGlobal,
+            });
             if (error) throw error;
 
-            if (GLOBAL_VISIBILITY_ROLES.includes(req.profile?.role)) {
-                const withLeaders = await attachLeaders(groups, req.companyId);
-                return res.json({ success: true, data: withLeaders, count: withLeaders.length });
-            }
-
-            const [deptIds, myMemberships] = await Promise.all([
-                resolveVisibleDepartmentIds(req),
-                supabase
-                    .from('small_group_members')
-                    .select('group_id')
-                    .eq('profile_id', req.user.id)
-                    .eq('company_id', req.companyId)
-                    .eq('status', 'active'),
-            ]);
-            const myGroupIds = new Set((myMemberships.data || []).map((m) => m.group_id));
-
-            // Ve un grupo si cae en su alcance por departamento, O si es miembro activo puntual
-            // (esto último cubre grupos sin depto o de otro depto donde igual quedó a cargo).
-            let visible = groups.filter((g) =>
-                (deptIds && g.department_id && deptIds.has(g.department_id)) || myGroupIds.has(g.id)
-            );
-
-            visible = await attachLeaders(visible, req.companyId);
-            res.json({ success: true, data: visible, count: visible.length });
+            const grupos = data || [];
+            res.json({ success: true, data: grupos, count: grupos.length });
         } catch (error) {
             next(error);
         }
