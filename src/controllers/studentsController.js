@@ -611,6 +611,50 @@ id,
     }
   },
 
+  // POST /api/students/:id/merge - Fusiona dos fichas que son la misma persona.
+  // :id es la ficha que se absorbe (queda soft-deleted); body.target_id la que sobrevive
+  // con todo el historial de ambas. Con body.dry_run = true solo devuelve el conteo.
+  //
+  // Va por SP porque son 7 tablas en cadena y supabase-js no da transacciones: a mitad
+  // de camino la persona quedaria partida en dos sin forma de volver atras.
+  merge: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { target_id, dry_run } = req.body || {};
+
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!UUID_RE.test(id)) {
+        return res.status(400).json({ success: false, message: 'id inválido' });
+      }
+      if (!target_id || !UUID_RE.test(target_id)) {
+        return res.status(400).json({ success: false, message: 'target_id inválido' });
+      }
+      if (id === target_id) {
+        return res.status(400).json({ success: false, message: 'No se puede fusionar un miembro consigo mismo' });
+      }
+
+      const { data, error } = await supabaseAdmin.schema('api').rpc('miembros_fusionar', {
+        p_company_id: req.companyId,
+        p_source_id:  id,
+        p_target_id:  target_id,
+        p_dry_run:    dry_run === true,
+      });
+
+      if (error) {
+        // El SP valida pertenencia a la empresa, fichas borradas y el choque de cuentas
+        // de usuario. Todo eso es culpa del pedido, no del servidor.
+        if (error.code === 'P0002' || error.code === '23514') {
+          return res.status(409).json({ success: false, message: error.message });
+        }
+        throw error;
+      }
+
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+
   // DELETE /api/students/:id - Soft delete completo o solo desvincular de un departamento
   // Query opcional: ?department_id=XXX -> si el miembro pertenece a >1 depto, solo desvincula ese
   delete: async (req, res, next) => {

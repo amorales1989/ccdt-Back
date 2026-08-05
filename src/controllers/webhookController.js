@@ -1,5 +1,6 @@
 const { supabase, supabaseAdmin } = require('../config/supabase');
 const WhatsAppService = require('../services/whatsappService');
+const NotificationService = require('../services/notificationService');
 const mercadopagoService = require('../services/mercadopagoService');
 const { recurringAmount } = require('./subscriptionController');
 
@@ -101,17 +102,17 @@ const webhookController = {
 
             if (type === 'INSERT' && isConfirmed) {
                 shouldNotify = true;
-                header = '🆕 *Nuevo Evento Confirmado*';
+                header = '🆕 Nuevo Evento Confirmado';
             } else if (type === 'UPDATE' && isConfirmed) {
                 // Notificamos si antes no era confirmado y ahora sí (aprobación)
                 // O si simplemente hubo un cambio en un evento ya confirmado
                 const wasConfirmed = old_record && (old_record.solicitud === false || old_record.estado === 'aprobado');
 
                 if (!wasConfirmed) {
-                    header = '✅ *Evento Aprobado*';
+                    header = '✅ Evento Aprobado';
                     shouldNotify = true;
                 } else {
-                    header = '🔄 *Evento Actualizado*';
+                    header = '🔄 Evento Actualizado';
                     shouldNotify = true;
                 }
             }
@@ -119,15 +120,15 @@ const webhookController = {
             if (shouldNotify) {
                 const dateParts = record.date.split('-');
                 const formattedDate = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
-                const time = record.time ? `\n⏰ *Hora:* ${record.time}` : '';
-                const desc = record.description ? `\n📝 *Descripción:* ${record.description}` : '';
+                const time = record.time ? ` ${record.time} hs` : '';
 
-                const broadcastMessage = `${header}\n\n📌 *Título:* ${record.title}\n📅 *Fecha:* ${formattedDate}${time}${desc}\n\n_Mensaje automático de Nexus_`;
+                const body = `${record.title} — ${formattedDate}${time}`;
 
                 console.log(`🚀 Iniciando difusión de evento: ${record.title}`);
 
-                // Disparamos la difusión en segundo plano para no bloquear el webhook
-                broadcastToAll(broadcastMessage, record.company_id || 1);
+                // Los eventos aprobados se avisan SOLO por push + campanita (nada de WhatsApp).
+                // Se dispara en segundo plano para no bloquear el webhook.
+                broadcastToAll(header, body, record.company_id || 1);
             }
 
             res.json({ success: true, received: true });
@@ -438,9 +439,10 @@ const webhookController = {
 };
 
 /**
- * Helper para enviar mensajes a todos los perfiles con teléfono
+ * Helper para avisar un evento confirmado/aprobado por push + campanita.
+ * NO envía WhatsApp: los eventos se notifican solo dentro de la app.
  */
-async function broadcastToAll(message, companyId) {
+async function broadcastToAll(title, body, companyId) {
     try {
         // Leer roles configurados para notificación de eventos aprobados
         const { data: companyConfig } = await supabase
@@ -458,9 +460,8 @@ async function broadcastToAll(message, companyId) {
         // Traer todos los profiles de la company (filtramos en JS para considerar role primario, roles[] y assignments[])
         const { data: profiles, error } = await supabase
             .from('profiles')
-            .select('id, first_name, phone, role, roles, assignments')
-            .eq('company_id', companyId)
-            .not('phone', 'is', null);
+            .select('id, role, roles, assignments')
+            .eq('company_id', companyId);
 
         if (error) throw error;
         if (!profiles || profiles.length === 0) return;
@@ -473,18 +474,49 @@ async function broadcastToAll(message, companyId) {
             return false;
         };
 
-        const recipients = profiles
-            .filter(p => p.phone && String(p.phone).trim() !== '' && matchesRole(p))
-            .map(p => ({ phone: p.phone, name: p.first_name }));
+        const recipientIds = profiles.filter(matchesRole).map(p => p.id);
 
-        if (recipients.length === 0) {
+        if (recipientIds.length === 0) {
             console.log('⚠️ Ningún profile coincide con los roles configurados.');
             return;
         }
 
-        console.log(`👥 Difundiendo a ${recipients.length} usuarios (roles: ${configuredRoles.join(', ')}, delay 15-30s)...`);
-        const result = await WhatsAppService.sendBulkMessages(companyId, recipients, message);
-        console.log(`🏁 Difusión masiva completada. Enviados: ${result.sent}, Fallidos: ${result.failed}.`);
+        console.log(`👥 Notificando a ${recipientIds.length} usuarios (roles: ${configuredRoles.join(', ')})...`);
+
+        // Campanita: una sola inserción para todos (evita N+1 contra la DB)
+        const { error: notifError } = await supabaseAdmin
+            .from('user_notifications')
+            .insert(recipientIds.map(id => ({
+                company_id: companyId,
+                profile_id: id,
+                title,
+                body,
+                link: '/calendario',
+                type: 'evento',
+            })));
+        if (notifError) console.error('⚠️ Error persistiendo notificaciones de evento:', notifError.message);
+
+        // Push a todos los dispositivos activos de esos usuarios
+        const { data: rows, error: tokenError } = await supabase
+            .from('usuarios_tokens_fcm')
+            .select('token')
+            .in('usuario_id', recipientIds)
+            .eq('activo', true);
+        if (tokenError) throw tokenError;
+
+        const tokens = (rows || []).map(r => r.token);
+        if (tokens.length === 0) {
+            console.log('ℹ️ Sin dispositivos registrados: la notificación queda solo en la campanita.');
+            return;
+        }
+
+        const result = await NotificationService.enviarMultiple(
+            tokens,
+            { title, body },
+            { tipo: 'evento' },
+            '/calendario'
+        );
+        console.log(`🏁 Difusión completada. Push enviados: ${result.successCount}, fallidos: ${result.failureCount}.`);
     } catch (err) {
         console.error('❌ Error en difusión masiva:', err.message);
     }

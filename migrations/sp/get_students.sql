@@ -1,6 +1,21 @@
--- Agrega la columna baptized al SP get_students (requiere DROP porque cambia el tipo de retorno).
--- Ejecutar DESPUÉS de add_baptized_field.sql.
+-- Agrega las columnas baptized y small_groups_count al SP get_students
+-- (requiere DROP porque cambia el tipo de retorno).
+-- Ejecutar DESPUÉS de add_baptized_field.sql y add_small_groups.sql.
+--
+-- OJO — DROP FUNCTION borra los GRANTs y el SET search_path de la funcion. Por eso
+-- va todo en una transaccion (asi GET /api/students nunca ve la funcion inexistente)
+-- y al final se re-aplica el hardening de get_students_permissions.sql.
+-- Correr con el rol dueño de small_group_members (supabase_admin), o el CREATE INDEX falla.
+BEGIN;
+
 DROP FUNCTION IF EXISTS get_students(integer, uuid, text, text, text);
+
+-- Índices de apoyo para small_group_counts (add_small_groups.sql solo crea los únicos
+-- parciales por group_id, que no sirven para buscar por persona).
+CREATE INDEX IF NOT EXISTS idx_small_group_members_student
+  ON small_group_members(student_id) WHERE student_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_small_group_members_profile
+  ON small_group_members(profile_id) WHERE profile_id IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION get_students(
   p_company_id     integer,
@@ -29,6 +44,7 @@ RETURNS TABLE (
   created_at               timestamptz,
   is_authorized            boolean,
   active_enrollments_count bigint,
+  small_groups_count       bigint,
   dept_assignments         jsonb
 )
 LANGUAGE sql
@@ -112,6 +128,23 @@ enrollment_counts AS MATERIALIZED (
   FROM student_departments
   WHERE student_id IN (SELECT student_id FROM all_ids)
   GROUP BY student_id
+),
+
+-- CTE 6: grupos pequeños activos por alumno (MATERIALIZED, mismo motivo que CTE 4).
+-- El vínculo es por student_id O por profile_id: la constraint small_group_members_one_person
+-- obliga a uno u otro, y los que tienen cuenta se registran con profile_id.
+-- Se usa para distinguir al "miembro solo congregación" (0 departamentos Y 0 grupos)
+-- del miembro que solo participa de un grupo pequeño: ambos tienen department_id NULL.
+small_group_counts AS MATERIALIZED (
+  SELECT s.id AS student_id, COUNT(*) AS cnt
+  FROM students s
+  JOIN small_group_members sgm
+    ON sgm.student_id = s.id
+    OR (s.profile_id IS NOT NULL AND sgm.profile_id = s.profile_id)
+  WHERE s.id IN (SELECT student_id FROM all_ids)
+    AND sgm.company_id = p_company_id
+    AND sgm.status = 'active'
+  GROUP BY s.id
 )
 
 SELECT
@@ -134,6 +167,7 @@ SELECT
   s.created_at,
   (ai.student_id IS NOT NULL) AS is_authorized,
   COALESCE(ec.cnt, 0)          AS active_enrollments_count,
+  COALESCE(sgc.cnt, 0)         AS small_groups_count,
   COALESCE(asgn.dept_assignments, '[]'::jsonb) AS dept_assignments
 FROM students s
 JOIN all_ids ON all_ids.student_id = s.id
@@ -143,6 +177,7 @@ LEFT JOIN authorized_ids ai ON ai.student_id = s.id
 LEFT JOIN departments dep   ON dep.id = s.department_id
 LEFT JOIN assignments asgn  ON asgn.student_id = s.id
 LEFT JOIN enrollment_counts ec ON ec.student_id = s.id
+LEFT JOIN small_group_counts sgc ON sgc.student_id = s.id
 WHERE s.deleted_at IS NULL
   AND s.company_id = p_company_id
   AND (p_gender IS NULL OR COALESCE(p.gender, s.gender) = p_gender)
@@ -154,3 +189,14 @@ WHERE s.deleted_at IS NULL
 ORDER BY COALESCE(p.first_name, s.first_name);
 
 $$;
+
+-- Re-aplicar el hardening que el DROP se llevó puesto (ver get_students_permissions.sql).
+-- La funcion es SECURITY DEFINER: sin search_path fijo se puede secuestrar.
+ALTER FUNCTION public.get_students(integer, uuid, text, text, text)
+  SET search_path = public, pg_temp;
+
+-- NO se agrega aca el REVOKE FROM PUBLIC, anon, authenticated: studentsController.js:21
+-- todavia llama al RPC con el cliente anon, asi que revocar rompe GET /api/students con 403.
+-- Cuando ese controller pase a supabaseAdmin, correr get_students_permissions.sql.
+
+COMMIT;

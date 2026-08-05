@@ -506,45 +506,55 @@ const eventsController = {
       }
 
       // ✅ Notificar a todos los usuarios de la empresa (perfiles con acceso al sistema).
-      // Push + campanita para cada uno; WhatsApp solo para quienes no reciben push.
+      // SOLO push + campanita: los eventos aprobados no se difunden por WhatsApp.
       // Fire-and-forget para no bloquear la respuesta.
       if (isApproved) {
         const notifyCompany = async () => {
           const { data: companyProfiles, error: profilesError } = await supabaseAdmin
             .from('profiles')
-            .select('id, first_name, last_name, phone')
+            .select('id')
             .eq('company_id', req.companyId);
           if (profilesError) throw profilesError;
 
-          const recipients = (companyProfiles || []).filter(p => p.id !== solicitante_id);
+          const recipientIds = (companyProfiles || []).map(p => p.id).filter(id => id !== solicitante_id);
+          if (recipientIds.length === 0) return;
+
           const title = `✅ Evento aprobado: ${eventTitle}`;
           const body = `${requesterName} realizará "${eventTitle}" el ${adjustedDateForN8n}${eventTime ? ` a las ${eventTime}` : ''}.`;
-          const waFallback = [];
 
-          for (const p of recipients) {
-            try {
-              const result = await NotificationService.enviarAUsuario(p.id, {
-                titulo: title,
-                cuerpo: body
-              }, { tipo: 'evento_aprobado', eventTitle, department: department || '' }, '/events');
+          // Campanita: una sola inserción para todos (evita N+1 contra la DB)
+          const { error: notifError } = await supabaseAdmin
+            .from('user_notifications')
+            .insert(recipientIds.map(id => ({
+              company_id: req.companyId,
+              profile_id: id,
+              title,
+              body,
+              link: '/events',
+              type: 'evento_aprobado',
+            })));
+          if (notifError) console.error('[Nexus] Error persistiendo notificaciones de evento aprobado:', notifError.message);
 
-              const delivered = !!(result && result.success !== false && (result.successCount === undefined || result.successCount > 0));
-              if (!delivered && p.phone && String(p.phone).trim() !== '') {
-                waFallback.push({ phone: p.phone, name: `${p.first_name || ''} ${p.last_name || ''}`.trim() });
-              }
-            } catch (err) {
-              if (p.phone && String(p.phone).trim() !== '') {
-                waFallback.push({ phone: p.phone, name: `${p.first_name || ''} ${p.last_name || ''}`.trim() });
-              }
-            }
+          const { data: tokenRows, error: tokenError } = await supabaseAdmin
+            .from('usuarios_tokens_fcm')
+            .select('token')
+            .in('usuario_id', recipientIds)
+            .eq('activo', true);
+          if (tokenError) throw tokenError;
+
+          const tokens = (tokenRows || []).map(r => r.token);
+          if (tokens.length === 0) {
+            console.log('[Evento aprobado] Sin dispositivos: la notificación queda solo en la campanita.');
+            return;
           }
 
-          if (waFallback.length > 0) {
-            const waText = `✅ *Evento aprobado*\n\n*Evento:* ${eventTitle}\n*Fecha:* ${adjustedDateForN8n}${eventTime ? `\n*Hora:* ${eventTime}` : ''}`;
-            WhatsAppService.sendBulkMessages(req.companyId, waFallback, waText)
-              .then(r => console.log(`[Evento aprobado WA] sent=${r.sent} failed=${r.failed}`))
-              .catch(err => console.error('[Evento aprobado WA] Error:', err.message));
-          }
+          const result = await NotificationService.enviarMultiple(
+            tokens,
+            { titulo: title, cuerpo: body },
+            { tipo: 'evento_aprobado', eventTitle, department: department || '' },
+            '/events'
+          );
+          console.log(`[Evento aprobado] Push enviados=${result.successCount} fallidos=${result.failureCount}`);
         };
         notifyCompany().catch(err => console.error('[Nexus] Error notificando evento aprobado a la empresa:', err.message));
       }

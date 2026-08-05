@@ -57,6 +57,11 @@ router.post('/', studentsController.create || ((req, res) => res.json({ error: '
 // PUT /api/students/:id - Actualizar estudiante
 router.put('/:id', studentsController.update || ((req, res) => res.json({ error: 'Method not implemented' })));
 
+// POST /api/students/:id/merge - Fusionar dos fichas de la misma persona.
+// Sin el fallback silencioso de las rutas de arriba (regla 5 del CLAUDE.md): si el
+// controller no carga, que reviente acá y no que devuelva 200 con data vacía.
+router.post('/:id/merge', studentsController.merge);
+
 // POST /api/students/:id/departments - Agregar asignación de departamento
 router.post('/:id/departments', studentsController.addDepartment || ((req, res) => res.json({ error: 'Method not implemented' })));
 

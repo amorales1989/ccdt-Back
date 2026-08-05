@@ -15,6 +15,7 @@ Las migraciones de tablas/columnas siguen en `migrations/`.
 | `asistencia_matriz.sql` | `api.asistencia_matriz` | `GET /api/attendance/matrix` (reporte de asistencia en grilla) |
 | `get_students.sql` | `public.get_students` | `GET /api/students` |
 | `get_students_permissions.sql` | grants de `public.get_students` | — |
+| `miembros_fusionar.sql` | `api.miembros_fusionar` | `POST /api/students/:id/merge` (unificar fichas duplicadas) |
 
 `get_students` quedó en `public` por historia; los SP nuevos van en `api`.
 
