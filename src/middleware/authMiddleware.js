@@ -13,6 +13,26 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 
 const INACTIVITY_LIMIT_MS = 60 * 60 * 1000; // 60 minutes
 
+// Un usuario suspendido sigue pudiendo entrar a la app, pero solo al calendario (actividades
+// generales de la iglesia) y a su propio perfil. Todo lo demás se corta acá, al instante,
+// sin esperar a que cierre sesión. Mismo criterio que el bloqueo por empresa inactiva.
+const SUSPENDED_ALLOWED_PREFIXES = [
+    '/api/heartbeat',   // mantiene last_active_at; sin esto lo echa el timeout de inactividad
+    '/api/company',     // branding/config que el front necesita para montar
+    '/api/tours',       // scope por req.user.id, inofensivo
+    '/api/tokens',      // registro/baja de token push (fcmRoutes se monta en /api)
+    '/api/fcm',         // suscripción a temas de push
+];
+
+const isAllowedWhileSuspended = (req) => {
+    const path = req.originalUrl.split('?')[0];
+    if (SUSPENDED_ALLOWED_PREFIXES.some(p => path.startsWith(p))) return true;
+    // Calendario en solo lectura (hoy el front lee events por Supabase directo, pero si migra
+    // al API tiene que seguir funcionando).
+    if (req.method === 'GET' && path.startsWith('/api/events')) return true;
+    return false;
+};
+
 const authMiddleware = async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
@@ -32,7 +52,7 @@ const authMiddleware = async (req, res, next) => {
         // 2. Verificar inactividad en el perfil
         const { data: profile, error: profileError } = await supabaseAdmin
             .from('profiles')
-            .select('last_active_at, company_id, role, departments, department_id')
+            .select('last_active_at, company_id, role, departments, department_id, suspended')
             .eq('id', user.id)
             .single();
 
@@ -86,7 +106,8 @@ const authMiddleware = async (req, res, next) => {
         req.profile = {
             role: profile?.role || null,
             departments: profile?.departments || [],
-            department_id: profile?.department_id || null
+            department_id: profile?.department_id || null,
+            suspended: profile?.suspended === true
         };
 
         // System admin: super admin por encima de todas las empresas. No tiene company_id
@@ -119,6 +140,15 @@ const authMiddleware = async (req, res, next) => {
             return res.status(400).json({
                 success: false,
                 message: 'No se pudo determinar el ID de la empresa para esta solicitud'
+            });
+        }
+
+        // Cuenta suspendida por un director/admin: acceso reducido al calendario y al perfil propio.
+        if (req.profile.suspended && !isAllowedWhileSuspended(req)) {
+            return res.status(403).json({
+                success: false,
+                code: 'USER_SUSPENDED',
+                message: 'Tu cuenta está suspendida. Solo tenés acceso al calendario.'
             });
         }
 
