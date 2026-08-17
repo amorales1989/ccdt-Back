@@ -4,6 +4,30 @@ const WhatsAppService = require('../services/whatsappService');
 const { anyRole } = require('../utils/roleFilter');
 
 const maintenanceController = {
+    // GET /api/maintenance/requests?status=pendiente,en_proceso
+    getRequests: async (req, res, next) => {
+        try {
+            const { status } = req.query;
+
+            let query = supabaseAdmin
+                .from('maintenance_requests')
+                .select('*')
+                .eq('company_id', req.companyId);
+
+            if (status) {
+                const estados = String(status).split(',').map(s => s.trim()).filter(Boolean);
+                if (estados.length > 0) query = query.in('status', estados);
+            }
+
+            const { data, error } = await query.order('created_at', { ascending: false });
+            if (error) throw error;
+
+            res.json({ success: true, data, count: data.length });
+        } catch (error) {
+            next(error);
+        }
+    },
+
     notifyNewRequest: async (req, res, next) => {
         try {
             const {

@@ -27,11 +27,24 @@ const eventsController = {
   // GET /api/events
   getAll: async (req, res, next) => {
     try {
-      const { data, error } = await supabase
+      // ?from=YYYY-MM-DD: el Home solo necesita los vigentes. Sin el filtro, una empresa con
+      // años de historial se come el tope de 1000 filas de PostgREST y el listado sale incompleto.
+      const { from } = req.query;
+      if (from && !/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+        const validationError = new Error('El parámetro "from" debe tener formato YYYY-MM-DD');
+        validationError.name = 'ValidationError';
+        throw validationError;
+      }
+
+      let query = supabase
         .from('events')
         .select('*')
-        .eq('company_id', req.companyId)
-        .order('date', { ascending: true });
+        .eq('company_id', req.companyId);
+
+      // Un evento de varios días sigue vigente hasta su end_date.
+      if (from) query = query.or(`end_date.gte.${from},and(end_date.is.null,date.gte.${from})`);
+
+      const { data, error } = await query.order('date', { ascending: true });
 
       if (error) {
         throw error;
