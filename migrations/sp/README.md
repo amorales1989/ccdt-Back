@@ -13,6 +13,7 @@ Las migraciones de tablas/columnas siguen en `migrations/`.
 |---|---|---|
 | `00_create_api_schema.sql` | (schema `api` + grants) | — |
 | `asistencia_matriz.sql` | `api.asistencia_matriz` | `GET /api/attendance/matrix` (reporte de asistencia en grilla) |
+| `asistencia_eventos_listar.sql` | `api.asistencia_eventos_listar` | `GET /api/attendance/events` (días especiales sin clase) |
 | `get_students.sql` | `public.get_students` | `GET /api/students` |
 | `get_students_permissions.sql` | grants de `public.get_students` | — |
 | `miembros_fusionar.sql` | `api.miembros_fusionar` | `POST /api/students/:id/merge` (unificar fichas duplicadas) |

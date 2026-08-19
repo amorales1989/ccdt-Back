@@ -5,10 +5,15 @@
 -- 1000 filas (faltaban las últimas fechas del reporte).
 --
 -- Devuelve un único jsonb ya agregado:
---   { "dates": ["2026-03-07", ...],
---     "rows":  [{ "student_id": "...", "marks": "PPA-P", "total": 3 }] }
+--   { "dates":  ["2026-03-07", ...],
+--     "rows":   [{ "student_id": "...", "marks": "PPA-P", "total": 3 }],
+--     "events": [{ "date": "2026-03-14", "title": "Campamento", "color": "amber", ... }] }
 -- donde `marks` tiene un caracter por fecha de `dates` (P=presente, A=ausente, -=sin registro).
 -- Solo aparecen los alumnos con al menos un registro; el front completa el resto con '-'.
+--
+-- `events` son los días especiales de class_events (no se tomó lista porque hubo otra actividad).
+-- Esas fechas se suman a `dates` aunque no tengan ni un registro de asistencia: si no, la columna
+-- no existiría en la grilla y el día desaparecería del reporte. Quedan en '-' para todos.
 --
 -- Requiere haber corrido antes 00_create_api_schema.sql.
 -- Llamada: supabaseAdmin.schema('api').rpc('asistencia_matriz', { ... })
@@ -54,10 +59,28 @@ WITH att AS (
     AND (p_assigned_class IS NULL OR a.assigned_class ILIKE p_assigned_class)
   GROUP BY a.student_id, a.date
 ),
+ev AS (
+  -- Días especiales del mismo scope. assigned_class NULL en el evento = todo el departamento.
+  SELECT e.id, e.date, e.title, e.description, e.color,
+         e.department_id, dp.name AS department, e.assigned_class
+  FROM class_events e
+  JOIN departments dp ON dp.id = e.department_id
+  WHERE e.company_id = p_company_id
+    AND e.date >= p_start
+    AND e.date <= p_end
+    AND (p_department_id IS NULL OR e.department_id = p_department_id)
+    AND (
+      p_department_names IS NULL
+      OR lower(dp.name) = ANY (SELECT lower(x) FROM unnest(p_department_names) x)
+    )
+    AND (p_assigned_class IS NULL
+         OR e.assigned_class IS NULL
+         OR e.assigned_class ILIKE p_assigned_class)
+),
 d AS (
-  -- Fechas con actividad, numeradas: idx = posición del caracter dentro de `marks`.
+  -- Fechas con actividad + fechas de eventos, numeradas: idx = posición dentro de `marks`.
   SELECT date, row_number() OVER (ORDER BY date)::int AS idx
-  FROM (SELECT DISTINCT date FROM att) x
+  FROM (SELECT date FROM att UNION SELECT date FROM ev) x
 ),
 n AS (SELECT count(*)::int AS total FROM d),
 seq AS (
@@ -88,6 +111,19 @@ SELECT jsonb_build_object(
                'total',      total
              ))
              FROM marks
+           ), '[]'::jsonb),
+  'events', COALESCE((
+             SELECT jsonb_agg(jsonb_build_object(
+               'id',             id,
+               'date',           date,
+               'title',          title,
+               'description',    description,
+               'color',          color,
+               'department_id',  department_id,
+               'department',     department,
+               'assigned_class', assigned_class
+             ) ORDER BY date, title)
+             FROM ev
            ), '[]'::jsonb)
 );
 $$;

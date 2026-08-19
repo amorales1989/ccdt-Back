@@ -52,7 +52,7 @@ const authMiddleware = async (req, res, next) => {
         // 2. Verificar inactividad en el perfil
         const { data: profile, error: profileError } = await supabaseAdmin
             .from('profiles')
-            .select('last_active_at, company_id, role, departments, department_id, suspended, first_name, last_name')
+            .select('last_active_at, company_id, role, departments, department_id, assigned_class, suspended, first_name, last_name')
             .eq('id', user.id)
             .single();
 
@@ -107,6 +107,9 @@ const authMiddleware = async (req, res, next) => {
             role: profile?.role || null,
             departments: profile?.departments || [],
             department_id: profile?.department_id || null,
+            // Clase del maestro/líder: se usa para acotar lo que puede escribir (ej. eventos
+            // especiales de su propia clase). Nunca tomar la clase del body.
+            assigned_class: profile?.assigned_class || null,
             suspended: profile?.suspended === true,
             // Solo para firmar quién hizo cada movimiento en la bitácora (student_events).
             first_name: profile?.first_name || null,

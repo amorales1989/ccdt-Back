@@ -9,7 +9,11 @@
 -- Devuelve un único jsonb:
 --   { "date": "YYYY-MM-DD",
 --     "departments": [{ "department_id", "name", "total_clases", "tomadas",
---                       "classes": [{ "clase", "tomada", "presentes", "total" }] }] }
+--                       "classes": [{ "clase", "tomada", "presentes", "total",
+--                                     "sin_clase", "motivo" }] }] }
+--
+-- sin_clase/motivo salen de class_events: ese día la clase no se dictó (campamento, feriado...),
+-- así que cuenta como resuelta y no se le reclama la lista al maestro.
 --
 -- Reglas que replica del controller:
 --   · Un alumno cuenta en una clase por su departamento PRIMARIO (students) o por uno
@@ -101,16 +105,38 @@ tomada AS (
    GROUP BY 1, 2
 ),
 
+-- ── Días marcados como evento especial (no hubo clase) ──
+eventos AS (
+  SELECT e.department_id AS dept_id,
+         btrim(lower(e.assigned_class)) AS cls, -- NULL = todo el departamento
+         e.title
+    FROM class_events e, fecha
+   WHERE e.company_id = p_company_id
+     AND e.date = fecha.f
+     AND e.department_id IN (SELECT id FROM deps)
+),
+
 -- ── Clases esperadas: las de departments.classes con al menos un alumno ──
+-- Una clase con evento especial cuenta como resuelta: nadie tiene que ir a tomar esa lista.
 clases AS (
   SELECT d.id AS dept_id, d.name, u.label, u.ord,
-         p.total                    AS total,
-         (t.dept_id IS NOT NULL)    AS tomada,
-         COALESCE(t.presentes, 0)   AS presentes
+         p.total                                        AS total,
+         (t.dept_id IS NOT NULL OR ev.title IS NOT NULL) AS tomada,
+         COALESCE(t.presentes, 0)                       AS presentes,
+         (t.dept_id IS NULL AND ev.title IS NOT NULL)   AS sin_clase,
+         ev.title                                       AS motivo
     FROM deps d
     CROSS JOIN LATERAL unnest(COALESCE(d.classes, '{}'::text[])) WITH ORDINALITY u(label, ord)
     JOIN padron p ON p.dept_id = d.id AND p.cls = btrim(lower(u.label)) AND p.total > 0
     LEFT JOIN tomada t ON t.dept_id = d.id AND t.cls = btrim(lower(u.label))
+    LEFT JOIN LATERAL (
+      SELECT e.title
+        FROM eventos e
+       WHERE e.dept_id = d.id
+         AND (e.cls IS NULL OR e.cls = btrim(lower(u.label)))
+       ORDER BY (e.cls IS NULL) -- el evento de la clase puntual gana sobre el de todo el depto
+       LIMIT 1
+    ) ev ON true
 )
 
 SELECT jsonb_build_object(
@@ -126,7 +152,9 @@ SELECT jsonb_build_object(
                                          'clase',     c.label,
                                          'tomada',    c.tomada,
                                          'presentes', c.presentes,
-                                         'total',     c.total
+                                         'total',     c.total,
+                                         'sin_clase', c.sin_clase,
+                                         'motivo',    c.motivo
                                        ) ORDER BY c.ord)
                                   FROM clases c WHERE c.dept_id = d.id
                               ), '[]'::jsonb)
