@@ -16,6 +16,8 @@ Las migraciones de tablas/columnas siguen en `migrations/`.
 | `get_students.sql` | `public.get_students` | `GET /api/students` |
 | `get_students_permissions.sql` | grants de `public.get_students` | — |
 | `miembros_fusionar.sql` | `api.miembros_fusionar` | `POST /api/students/:id/merge` (unificar fichas duplicadas) |
+| `miembros_archivados.sql` | `api.miembros_archivados` | `GET /api/students/archived` (archivo de ex miembros) |
+| `miembro_linea_tiempo.sql` | `api.miembro_linea_tiempo` | `GET /api/students/:id/timeline` (línea cronológica) |
 
 `get_students` quedó en `public` por historia; los SP nuevos van en `api`.
 

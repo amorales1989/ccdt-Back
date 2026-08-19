@@ -52,7 +52,7 @@ const authMiddleware = async (req, res, next) => {
         // 2. Verificar inactividad en el perfil
         const { data: profile, error: profileError } = await supabaseAdmin
             .from('profiles')
-            .select('last_active_at, company_id, role, departments, department_id, suspended')
+            .select('last_active_at, company_id, role, departments, department_id, suspended, first_name, last_name')
             .eq('id', user.id)
             .single();
 
@@ -107,7 +107,10 @@ const authMiddleware = async (req, res, next) => {
             role: profile?.role || null,
             departments: profile?.departments || [],
             department_id: profile?.department_id || null,
-            suspended: profile?.suspended === true
+            suspended: profile?.suspended === true,
+            // Solo para firmar quién hizo cada movimiento en la bitácora (student_events).
+            first_name: profile?.first_name || null,
+            last_name: profile?.last_name || null
         };
 
         // System admin: super admin por encima de todas las empresas. No tiene company_id

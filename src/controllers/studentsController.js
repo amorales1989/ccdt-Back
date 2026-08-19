@@ -1,6 +1,21 @@
 const { supabase, supabaseAdmin } = require('../config/supabase');
 const BirthdayService = require('../services/birthdayService');
 const { assertMemberLimitNotReached } = require('../services/memberLimitService');
+const {
+  EVENT, buildFieldDiff, deptNames, logStudentEvent, logStudentEvents
+} = require('../services/studentEventsService');
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// El archivo de ex miembros expone datos de gente que ya no está (motivo de baja incluido):
+// no es para cualquier rol.
+const ARCHIVE_ROLES = ['admin', 'secretaria', 'director_general'];
+
+// Motivos válidos de baja. Tienen que coincidir con MOTIVOS_BAJA del front
+// (src/components/BajaMiembroDialog.tsx): el valor se guarda en students.deleted_reason
+// y el archivo filtra por él, así que no se cambian una vez que hay datos.
+const MOTIVOS_BAJA = ['mudanza', 'dejo_de_asistir', 'cambio_iglesia', 'fallecimiento', 'duplicado', 'otro'];
 
 const studentsController = {
   // POST /api/students/check-birthdays
@@ -37,6 +52,70 @@ const studentsController = {
       }));
 
       res.json({ success: true, data: students, count: students.length });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // GET /api/students/archived - Archivo de ex miembros (fichas dadas de baja).
+  archived: async (req, res, next) => {
+    try {
+      if (!ARCHIVE_ROLES.includes(req.profile?.role)) {
+        return res.status(403).json({ success: false, message: 'No tenés permiso para ver el archivo de miembros' });
+      }
+
+      const { search, department_id, desde, hasta, limit, offset } = req.query;
+
+      if (department_id && !UUID_RE.test(department_id)) {
+        return res.status(400).json({ success: false, message: 'department_id inválido' });
+      }
+      if (desde && !ISO_DATE_RE.test(desde)) {
+        return res.status(400).json({ success: false, message: 'desde debe ser una fecha YYYY-MM-DD' });
+      }
+      if (hasta && !ISO_DATE_RE.test(hasta)) {
+        return res.status(400).json({ success: false, message: 'hasta debe ser una fecha YYYY-MM-DD' });
+      }
+
+      const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 30, 1), 100);
+      const parsedOffset = Math.max(parseInt(offset, 10) || 0, 0);
+
+      const { data, error } = await supabaseAdmin.schema('api').rpc('miembros_archivados', {
+        p_company_id: req.companyId,
+        p_search: search || null,
+        p_department_id: department_id || null,
+        p_desde: desde || null,
+        p_hasta: hasta || null,
+        p_limit: parsedLimit,
+        p_offset: parsedOffset,
+      });
+
+      if (error) throw error;
+
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // GET /api/students/:id/timeline - Línea cronológica de la persona (activa o archivada).
+  timeline: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      if (!UUID_RE.test(id)) {
+        return res.status(400).json({ success: false, message: 'id inválido' });
+      }
+
+      const { data, error } = await supabaseAdmin.schema('api').rpc('miembro_linea_tiempo', {
+        p_company_id: req.companyId,
+        p_student_id: id,
+      });
+
+      if (error) throw error;
+      if (!data) {
+        return res.status(404).json({ success: false, message: 'Miembro no encontrado' });
+      }
+
+      res.json({ success: true, data });
     } catch (error) {
       next(error);
     }
@@ -319,6 +398,38 @@ id,
           duplicateError.status = 409;
           throw duplicateError;
         }
+
+        // Red de seguridad: el DNI puede ser de alguien que ya estuvo y se fue. Crear una
+        // ficha nueva dejaría su historial (asistencias, observaciones) colgando de la vieja,
+        // así que se corta acá y el front ofrece reactivar la que ya existe.
+        const { data: archivado, error: archErr } = await supabase
+          .from('students')
+          .select('id, first_name, last_name, deleted_at, deleted_reason, departments(name)')
+          .eq('document_number', document_number.trim())
+          .not('deleted_at', 'is', null)
+          .eq('company_id', req.companyId)
+          .order('deleted_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (archErr) throw archErr;
+
+        if (archivado) {
+          return res.status(409).json({
+            success: false,
+            code: 'ARCHIVED_DNI',
+            message: `${archivado.first_name} ${archivado.last_name || ''}`.trim() +
+              ' ya estuvo en la congregación y su ficha está archivada. Reactivala para no perder su historial.',
+            archived_student: {
+              id: archivado.id,
+              first_name: archivado.first_name,
+              last_name: archivado.last_name,
+              deleted_at: archivado.deleted_at,
+              deleted_reason: archivado.deleted_reason,
+              department: archivado.departments?.name || null,
+            },
+          });
+        }
       }
 
       const { dept_assignments } = req.body;
@@ -398,6 +509,23 @@ id,
             .upsert(junctionRows, { onConflict: 'student_id,department_id,role_in_dept' });
         }
 
+        const cambiosPersona = buildFieldDiff(existing, personUpdates);
+        const nombresVinculados = await deptNames(req.companyId, assignmentsToAdd.map(a => a.department_id));
+        await logStudentEvent(req, {
+          studentId: existing.id,
+          type: EVENT.VINCULACION,
+          departmentId: assignmentsToAdd[0]?.department_id || null,
+          detail: {
+            departamentos: assignmentsToAdd.map(a => ({
+              id: a.department_id,
+              nombre: nombresVinculados[a.department_id] || null,
+              clase: a.assigned_class || null,
+              rol: a.role_in_dept || 'alumno',
+            })),
+            ...(Object.keys(cambiosPersona).length > 0 ? { cambios: cambiosPersona } : {}),
+          },
+        });
+
         return res.status(200).json({
           success: true,
           message: 'Miembro existente vinculado al nuevo departamento',
@@ -451,6 +579,23 @@ id,
         await supabase.from('student_departments').upsert(junctionRows, { onConflict: 'student_id,department_id,role_in_dept' });
       }
 
+      const nombresAlta = await deptNames(req.companyId, assignments.map(a => a.department_id));
+      await logStudentEvent(req, {
+        studentId: data.id,
+        type: EVENT.ALTA,
+        departmentId: primaryDeptId,
+        detail: {
+          nombre: `${data.first_name} ${data.last_name || ''}`.trim(),
+          origen: person_source || (profile_id ? 'usuario' : 'manual'),
+          departamentos: assignments.map(a => ({
+            id: a.department_id,
+            nombre: nombresAlta[a.department_id] || null,
+            clase: a.assigned_class || null,
+            rol: a.role_in_dept || 'alumno',
+          })),
+        },
+      });
+
       res.status(201).json({
         success: true,
         message: 'Estudiante creado exitosamente',
@@ -470,7 +615,8 @@ id,
       // Verificar que el estudiante existe
       const { data: existingStudent, error: fetchError } = await supabase
         .from('students')
-        .select('id, document_number')
+        // Los campos de más son el "antes" que compara la bitácora (student_events).
+        .select('id, document_number, first_name, last_name, birthdate, gender, phone, address, baptized, department_id, assigned_class')
         .eq('id', id)
         .is('deleted_at', null)
         .eq('company_id', req.companyId)
@@ -595,6 +741,35 @@ id,
         }
       }
 
+      // Bitácora: el cambio de departamento es un movimiento y se guarda aparte de la
+      // edición de datos personales, que es otra cosa cuando se lee la línea de tiempo.
+      const cambios = buildFieldDiff(existingStudent, cleanUpdates);
+      const deptAnterior = existingStudent.department_id || null;
+      const deptNuevo = data.department_id || null;
+
+      if (deptAnterior !== deptNuevo) {
+        const nombres = await deptNames(req.companyId, [deptAnterior, deptNuevo]);
+        await logStudentEvent(req, {
+          studentId: id,
+          type: EVENT.CAMBIO_DEPARTAMENTO,
+          departmentId: deptNuevo,
+          detail: {
+            de: { id: deptAnterior, nombre: nombres[deptAnterior] || null, clase: existingStudent.assigned_class || null },
+            a: { id: deptNuevo, nombre: nombres[deptNuevo] || data.departments?.name || null, clase: data.assigned_class || null },
+          },
+        });
+        delete cambios.assigned_class; // la clase nueva ya viaja dentro del cambio de departamento
+      }
+
+      if (cambios.baptized?.a === true) {
+        await logStudentEvent(req, { studentId: id, type: EVENT.BAUTISMO, departmentId: deptNuevo, detail: {} });
+        delete cambios.baptized;
+      }
+
+      if (Object.keys(cambios).length > 0) {
+        await logStudentEvent(req, { studentId: id, type: EVENT.EDICION, departmentId: deptNuevo, detail: { cambios } });
+      }
+
       const studentWithDepartment = {
         ...data,
         department: data.departments?.name || data.department,
@@ -649,7 +824,243 @@ id,
         throw error;
       }
 
+      // La ficha absorbida queda soft-deleted pero su fila sigue existiendo, así que ambas
+      // conservan el evento y la línea de tiempo del sobreviviente explica de dónde salió.
+      if (dry_run !== true) {
+        await logStudentEvents(req, [
+          { studentId: id, type: EVENT.FUSION, detail: { rol: 'absorbida', hacia: target_id, resumen: data } },
+          { studentId: target_id, type: EVENT.FUSION, detail: { rol: 'sobrevive', desde: id, resumen: data } },
+        ]);
+      }
+
       res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // POST /api/students/promote - Pase masivo de miembros a otro departamento/clase.
+  //
+  // Antes lo hacía el front con supabase.from('students').update() directo (regla 14): sin
+  // registro de quién promovió a quién, y dejando student_departments con el departamento
+  // viejo, así que la lista de miembros seguía mostrando el anterior.
+  promote: async (req, res, next) => {
+    try {
+      const { student_ids, department_id, assigned_class } = req.body || {};
+
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!Array.isArray(student_ids) || student_ids.length === 0) {
+        return res.status(400).json({ success: false, message: 'student_ids es requerido' });
+      }
+      if (!student_ids.every(sid => typeof sid === 'string' && UUID_RE.test(sid))) {
+        return res.status(400).json({ success: false, message: 'student_ids contiene un id inválido' });
+      }
+      if (!department_id || !UUID_RE.test(department_id)) {
+        return res.status(400).json({ success: false, message: 'department_id inválido' });
+      }
+
+      const { data: targetDept, error: deptErr } = await supabase
+        .from('departments')
+        .select('id, name')
+        .eq('id', department_id)
+        .eq('company_id', req.companyId)
+        .maybeSingle();
+      if (deptErr) throw deptErr;
+      if (!targetDept) {
+        return res.status(404).json({ success: false, message: 'Departamento destino no encontrado' });
+      }
+
+      // El filtro por company_id acá es el aislamiento multi-tenant: ids de otra empresa
+      // simplemente no entran a la lista.
+      const { data: students, error: stErr } = await supabase
+        .from('students')
+        .select('id, first_name, last_name, department_id, assigned_class')
+        .in('id', student_ids)
+        .eq('company_id', req.companyId)
+        .is('deleted_at', null);
+      if (stErr) throw stErr;
+      if (!students || students.length === 0) {
+        return res.status(404).json({ success: false, message: 'Ningún miembro válido para promover' });
+      }
+
+      const ids = students.map(s => s.id);
+      const nuevaClase = assigned_class || null;
+
+      const { error: updErr } = await supabase
+        .from('students')
+        .update({ department_id, department: targetDept.name, assigned_class: nuevaClase })
+        .in('id', ids)
+        .eq('company_id', req.companyId);
+      if (updErr) throw updErr;
+
+      // Junction: sacar la asignación del departamento de origen (agrupada por origen, que
+      // normalmente es uno solo) y crear la del destino. Las otras asignaciones no se tocan.
+      const porOrigen = new Map();
+      students.forEach(s => {
+        if (!s.department_id || s.department_id === department_id) return;
+        if (!porOrigen.has(s.department_id)) porOrigen.set(s.department_id, []);
+        porOrigen.get(s.department_id).push(s.id);
+      });
+      for (const [origenId, sids] of porOrigen) {
+        const { error: delErr } = await supabase
+          .from('student_departments')
+          .delete()
+          .in('student_id', sids)
+          .eq('department_id', origenId)
+          .eq('company_id', req.companyId);
+        if (delErr) throw delErr;
+      }
+
+      const { error: upsErr } = await supabase
+        .from('student_departments')
+        .upsert(
+          ids.map(sid => ({
+            student_id: sid,
+            department_id,
+            assigned_class: nuevaClase,
+            role_in_dept: 'alumno',
+            company_id: req.companyId,
+          })),
+          { onConflict: 'student_id,department_id,role_in_dept' }
+        );
+      if (upsErr) throw upsErr;
+
+      // Las autorizaciones firmadas son por departamento: al entrar al nuevo hay que volver
+      // a pedirlas, así que se limpian las que ya existieran ahí.
+      await supabase
+        .from('student_authorizations')
+        .delete()
+        .in('student_id', ids)
+        .eq('department_id', department_id)
+        .eq('company_id', req.companyId);
+
+      const nombresOrigen = await deptNames(req.companyId, students.map(s => s.department_id));
+      await logStudentEvents(req, students.map(s => ({
+        studentId: s.id,
+        type: EVENT.PROMOCION,
+        departmentId: department_id,
+        detail: {
+          de: { id: s.department_id, nombre: nombresOrigen[s.department_id] || null, clase: s.assigned_class || null },
+          a: { id: department_id, nombre: targetDept.name, clase: nuevaClase },
+        },
+      })));
+
+      res.json({
+        success: true,
+        promoted: ids.length,
+        message: `${ids.length} miembro(s) promovido(s) a ${targetDept.name}`,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // POST /api/students/:id/restore - Vuelve a activar una ficha archivada.
+  //
+  // Es la contracara de la baja: la persona volvió, y en vez de cargarla de nuevo (dejando su
+  // asistencia y observaciones colgadas de la ficha vieja) se reactiva la que ya existe.
+  restore: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { department_id, assigned_class } = req.body || {};
+
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!UUID_RE.test(id)) {
+        return res.status(400).json({ success: false, message: 'id inválido' });
+      }
+      if (department_id && !UUID_RE.test(department_id)) {
+        return res.status(400).json({ success: false, message: 'department_id inválido' });
+      }
+
+      const { data: archivado, error: fetchErr } = await supabase
+        .from('students')
+        .select('id, first_name, last_name, department_id, assigned_class, deleted_at, deleted_reason')
+        .eq('id', id)
+        .eq('company_id', req.companyId)
+        .not('deleted_at', 'is', null)
+        .maybeSingle();
+      if (fetchErr) throw fetchErr;
+      if (!archivado) {
+        return res.status(404).json({ success: false, message: 'La ficha no existe o ya está activa' });
+      }
+
+      // Vuelve a ocupar un lugar activo, así que cuenta contra el límite del plan.
+      await assertMemberLimitNotReached(req.companyId);
+
+      let deptName = null;
+      if (department_id) {
+        const { data: dept, error: deptErr } = await supabase
+          .from('departments')
+          .select('id, name')
+          .eq('id', department_id)
+          .eq('company_id', req.companyId)
+          .maybeSingle();
+        if (deptErr) throw deptErr;
+        if (!dept) {
+          return res.status(404).json({ success: false, message: 'Departamento no encontrado' });
+        }
+        deptName = dept.name;
+      }
+
+      const updates = { deleted_at: null, deleted_reason: null, deleted_by: null };
+      if (department_id) {
+        updates.department_id = department_id;
+        updates.department = deptName;
+        updates.assigned_class = assigned_class || null;
+      }
+
+      const { data, error } = await supabase
+        .from('students')
+        .update(updates)
+        .eq('id', id)
+        .eq('company_id', req.companyId)
+        .select('*, departments(name)')
+        .single();
+      if (error) throw error;
+
+      // Junction: al volver a otro departamento, la asignación vieja no tiene sentido.
+      // Las filas de asistencia no se tocan: cada una guarda el departamento donde ocurrió.
+      if (department_id) {
+        if (archivado.department_id && archivado.department_id !== department_id) {
+          await supabase
+            .from('student_departments')
+            .delete()
+            .eq('student_id', id)
+            .eq('department_id', archivado.department_id)
+            .eq('company_id', req.companyId);
+        }
+        await supabase
+          .from('student_departments')
+          .upsert(
+            {
+              student_id: id,
+              department_id,
+              assigned_class: assigned_class || null,
+              role_in_dept: 'alumno',
+              company_id: req.companyId,
+            },
+            { onConflict: 'student_id,department_id,role_in_dept' }
+          );
+      }
+
+      await logStudentEvent(req, {
+        studentId: id,
+        type: EVENT.REACTIVACION,
+        departmentId: department_id || archivado.department_id || null,
+        detail: {
+          nombre: `${archivado.first_name} ${archivado.last_name || ''}`.trim(),
+          baja_previa: { fecha: archivado.deleted_at, motivo: archivado.deleted_reason },
+          ...(department_id
+            ? { departamento: { id: department_id, nombre: deptName, clase: assigned_class || null } }
+            : {}),
+        },
+      });
+
+      res.json({
+        success: true,
+        message: 'Miembro reactivado con todo su historial',
+        data: { ...data, department: data.departments?.name || data.department, is_deleted: false },
+      });
     } catch (error) {
       next(error);
     }
@@ -660,12 +1071,12 @@ id,
   delete: async (req, res, next) => {
     try {
       const { id } = req.params;
-      const { department_id: fromDeptId } = req.query;
+      const { department_id: fromDeptId, reason, reason_note } = req.query;
 
       // Verificar que el estudiante existe y no está eliminado
       const { data: existingStudent, error: fetchError } = await supabase
         .from('students')
-        .select('id, department_id, assigned_class')
+        .select('id, department_id, assigned_class, first_name, last_name')
         .eq('id', id)
         .is('deleted_at', null)
         .eq('company_id', req.companyId)
@@ -727,6 +1138,18 @@ id,
           if (delErr) throw delErr;
         }
 
+        const nombresDesv = await deptNames(req.companyId, [fromDeptId]);
+        await logStudentEvent(req, {
+          studentId: id,
+          type: EVENT.DESVINCULACION,
+          departmentId: fromDeptId,
+          detail: {
+            departamento: nombresDesv[fromDeptId] || null,
+            ...(reason ? { motivo: reason } : {}),
+            ...(reason_note ? { nota: reason_note } : {}),
+          },
+        });
+
         return res.json({
           success: true,
           message: 'Miembro desvinculado del departamento',
@@ -734,16 +1157,59 @@ id,
         });
       }
 
-      // Caso default: soft delete completo (1 solo depto o no se pasó department_id)
-      const { error } = await supabase
+      // Caso default: soft delete completo (1 solo depto o no se pasó department_id).
+      // Acá el motivo es obligatorio: una baja sin motivo es la que dejaba el archivo lleno
+      // de fichas que nadie puede interpretar después. La desvinculación de un departamento
+      // (arriba) no lo pide, porque no es una baja.
+      if (!reason || !MOTIVOS_BAJA.includes(reason)) {
+        return res.status(400).json({
+          success: false,
+          code: 'REASON_REQUIRED',
+          message: 'Indicá el motivo de la baja.',
+          motivos_validos: MOTIVOS_BAJA,
+        });
+      }
+
+      // El `.is('deleted_at', null)` hace la baja idempotente: si dos pedidos llegan a la vez
+      // (doble click, reintento de red), el segundo no actualiza ninguna fila y no registra
+      // una segunda baja en la bitácora. Sin esto, ambos pasaban la verificación de arriba.
+      const { data: bajaAplicada, error } = await supabase
         .from('students')
-        .update({ deleted_at: new Date().toISOString() })
+        .update({
+          deleted_at: new Date().toISOString(),
+          deleted_reason: reason,
+          deleted_by: req.user?.id || null,
+        })
         .eq('id', id)
-        .eq('company_id', req.companyId);
+        .eq('company_id', req.companyId)
+        .is('deleted_at', null)
+        .select('id');
 
       if (error) {
         throw error;
       }
+
+      if (!bajaAplicada || bajaAplicada.length === 0) {
+        return res.json({
+          success: true,
+          message: 'El miembro ya estaba dado de baja',
+          unlinked: false,
+        });
+      }
+
+      // La ficha no se borra: queda archivada con su motivo y su historial completo.
+      const nombresBaja = await deptNames(req.companyId, [...allDeptIds]);
+      await logStudentEvent(req, {
+        studentId: id,
+        type: EVENT.BAJA,
+        departmentId: existingStudent.department_id || null,
+        detail: {
+          nombre: `${existingStudent.first_name} ${existingStudent.last_name || ''}`.trim(),
+          motivo: reason,
+          ...(reason_note ? { nota: reason_note } : {}),
+          departamentos: [...allDeptIds].map(d => ({ id: d, nombre: nombresBaja[d] || null })),
+        },
+      });
 
       res.json({
         success: true,
@@ -769,6 +1235,21 @@ id,
         .single();
 
       if (error) throw error;
+
+      await logStudentEvent(req, {
+        studentId: id,
+        type: EVENT.VINCULACION,
+        departmentId: department_id,
+        detail: {
+          departamentos: [{
+            id: department_id,
+            nombre: data?.departments?.name || null,
+            clase: assigned_class || null,
+            rol: role_in_dept,
+          }],
+        },
+      });
+
       res.json({ success: true, data });
     } catch (error) {
       next(error);
@@ -820,6 +1301,14 @@ id,
           .eq('company_id', req.companyId);
         if (updErr) throw updErr;
       }
+
+      const nombresQuitado = await deptNames(req.companyId, [deptId]);
+      await logStudentEvent(req, {
+        studentId: id,
+        type: EVENT.DESVINCULACION,
+        departmentId: deptId,
+        detail: { departamento: nombresQuitado[deptId] || null },
+      });
 
       res.json({ success: true });
     } catch (error) {
@@ -944,7 +1433,34 @@ id,
         });
       }
 
-      // 3. No se encontró nada
+      // 3. Nadie activo con ese DNI: puede ser alguien que estuvo y se fue. La ficha vieja
+      // sigue archivada con todo su historial, así que se avisa en vez de dejar que carguen
+      // un duplicado. Si hay más de una (fusiones viejas), la más reciente.
+      const { data: archivado, error: aError } = await supabase
+        .from('students')
+        .select('id, first_name, last_name, birthdate, gender, phone, address, document_number, baptized, deleted_at, deleted_reason, department_id, assigned_class, departments(name)')
+        .eq('document_number', document_number)
+        .not('deleted_at', 'is', null)
+        .eq('company_id', req.companyId)
+        .order('deleted_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (aError) throw aError;
+
+      if (archivado) {
+        return res.json({
+          success: true,
+          source: 'student_archivado',
+          data: {
+            ...archivado,
+            department: archivado.departments?.name || null,
+            fullName: `${archivado.first_name} ${archivado.last_name || ''}`.trim()
+          }
+        });
+      }
+
+      // 4. No se encontró nada
       res.json({
         success: true,
         data: null,

@@ -33,6 +33,13 @@ router.get('/search', studentsController.search || ((req, res) => res.json({ err
 // GET /api/students/lookup/:document_number - Buscar persona por DNI en alumnos y perfiles
 router.get('/lookup/:document_number', studentsController.lookup || ((req, res) => res.json({ error: 'Method not implemented' })));
 
+// GET /api/students/archived - Archivo de ex miembros. Va ANTES de /:id o Express lo toma
+// como un id. Sin fallback silencioso (regla 5).
+router.get('/archived', studentsController.archived);
+
+// GET /api/students/:id/timeline - Línea cronológica de la persona.
+router.get('/:id/timeline', studentsController.timeline);
+
 // GET /api/students/birthdays/upcoming - Obtener próximos cumpleaños
 router.get('/birthdays/upcoming', studentsController.getUpcomingBirthdays || ((req, res) => res.json({ error: 'Method not implemented' })));
 
@@ -56,6 +63,13 @@ router.post('/', studentsController.create || ((req, res) => res.json({ error: '
 
 // PUT /api/students/:id - Actualizar estudiante
 router.put('/:id', studentsController.update || ((req, res) => res.json({ error: 'Method not implemented' })));
+
+// POST /api/students/promote - Pase masivo de departamento/clase.
+// Sin fallback silencioso (regla 5): tiene que reventar si el controller no carga.
+router.post('/promote', studentsController.promote);
+
+// POST /api/students/:id/restore - Reactivar una ficha archivada (sin fallback silencioso).
+router.post('/:id/restore', studentsController.restore);
 
 // POST /api/students/:id/merge - Fusionar dos fichas de la misma persona.
 // Sin el fallback silencioso de las rutas de arriba (regla 5 del CLAUDE.md): si el
