@@ -1,5 +1,6 @@
 const express = require('express');
 const { supabaseAdmin } = require('../config/supabase');
+const companyRolesController = require('../controllers/companyRolesController');
 const router = express.Router();
 
 // GET /api/company - Datos de la empresa del usuario logueado (cualquier rol).
@@ -40,5 +41,15 @@ router.get('/badges', async (req, res, next) => {
     res.json({ success: true, data: badges });
   } catch (error) { next(error); }
 });
+
+// Roles propios de la empresa. La lectura es abierta a cualquier rol autenticado (los selects
+// y las etiquetas necesitan el label); las escrituras las valida el controller (admin/secretaría).
+router.get('/roles', companyRolesController.listRoles);
+router.post('/roles', companyRolesController.createRole);
+router.patch('/roles/:id', companyRolesController.updateRole);
+router.delete('/roles/:id', companyRolesController.deleteRole);
+
+// Matriz de permisos por rol. Antes se escribía desde el browser con la anon key.
+router.patch('/role-permissions', companyRolesController.updateRolePermissions);
 
 module.exports = router;

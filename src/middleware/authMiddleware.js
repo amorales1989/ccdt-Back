@@ -52,7 +52,7 @@ const authMiddleware = async (req, res, next) => {
         // 2. Verificar inactividad en el perfil
         const { data: profile, error: profileError } = await supabaseAdmin
             .from('profiles')
-            .select('last_active_at, company_id, role, departments, department_id, assigned_class, suspended, first_name, last_name')
+            .select('last_active_at, company_id, role, roles, departments, department_id, assigned_class, suspended, first_name, last_name')
             .eq('id', user.id)
             .single();
 
@@ -105,6 +105,9 @@ const authMiddleware = async (req, res, next) => {
         // No confiar nunca en rol/departamentos provistos por el cliente.
         req.profile = {
             role: profile?.role || null,
+            // Roles secundarios (text[]): incluye los roles custom de la empresa, que no existen
+            // en el enum app_role. Un guard por rol debe mirar `role` Y `roles`.
+            roles: Array.isArray(profile?.roles) ? profile.roles : [],
             departments: profile?.departments || [],
             department_id: profile?.department_id || null,
             // Clase del maestro/líder: se usa para acotar lo que puede escribir (ej. eventos
