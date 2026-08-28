@@ -26,6 +26,9 @@ router.put('/:id', departmentsController.update);
 // PUT /api/departments/:id/classes - Actualizar clases de un departamento
 router.put('/:id/classes', departmentsController.updateClasses);
 
+// GET /api/departments/:id/delete-impact - A quiénes afecta borrar el departamento
+router.get('/:id/delete-impact', departmentsController.deleteImpact);
+
 // DELETE /api/departments/:id - Eliminar departamento
 router.delete('/:id', departmentsController.delete);
 

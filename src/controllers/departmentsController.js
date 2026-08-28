@@ -1,4 +1,7 @@
-const { supabase } = require('../config/supabase');
+const { supabase, supabaseAdmin } = require('../config/supabase');
+
+// Quienes ven la pantalla de Departamentos (menu_departamentos en rolePermissions del front).
+const MANAGE_ROLES = ['admin', 'secretaria'];
 
 const departmentsController = {
   // GET /api/departments
@@ -273,46 +276,53 @@ const departmentsController = {
     }
   },
 
+  // GET /api/departments/:id/delete-impact
+  // Previsualiza a quiénes afecta el borrado, para avisarlo en el diálogo de confirmación.
+  deleteImpact: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      if (!MANAGE_ROLES.includes(req.profile?.role)) {
+        const e = new Error('No tienes permiso para eliminar departamentos');
+        e.status = 403;
+        throw e;
+      }
+
+      const { data, error } = await supabaseAdmin.schema('api').rpc('departamento_eliminar', {
+        p_company_id: req.companyId,
+        p_department_id: id,
+        p_dry_run: true,
+      });
+      if (error) throw error;
+
+      res.json({ success: true, data });
+    } catch (error) { next(error); }
+  },
+
   // DELETE /api/departments/:id
+  // El SP reasigna a los miembros antes de borrar: los que tienen otra asignación se mudan a
+  // ella y el resto queda sin departamento (sigue siendo miembro de la congregación).
   delete: async (req, res, next) => {
     try {
       const { id } = req.params;
-
-      // Verificar si hay estudiantes asociados
-      const { data: students, error: studentsError } = await supabase
-        .from('students')
-        .select('id')
-        .eq('department_id', id)
-        .eq('company_id', req.companyId)
-        .limit(1);
-
-      if (studentsError) {
-        throw studentsError;
+      if (!MANAGE_ROLES.includes(req.profile?.role)) {
+        const e = new Error('No tienes permiso para eliminar departamentos');
+        e.status = 403;
+        throw e;
       }
 
-      if (students && students.length > 0) {
-        const validationError = new Error('No se puede eliminar el departamento porque tiene estudiantes asociados');
-        validationError.name = 'ValidationError';
-        throw validationError;
-      }
-
-      const { error } = await supabase
-        .from('departments')
-        .delete()
-        .eq('id', id)
-        .eq('company_id', req.companyId);
-
-      if (error) {
-        throw error;
-      }
+      const { data, error } = await supabaseAdmin.schema('api').rpc('departamento_eliminar', {
+        p_company_id: req.companyId,
+        p_department_id: id,
+        p_dry_run: false,
+      });
+      if (error) throw error;
 
       res.json({
         success: true,
-        message: 'Departamento eliminado exitosamente'
+        message: 'Departamento eliminado exitosamente',
+        data
       });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   },
 
   // PUT /api/departments/:id/classes
