@@ -9,6 +9,7 @@ router.delete('/transactions/:id', accountingController.deleteTransaction);
 
 router.get('/categories', accountingController.getCategories);
 router.get('/balance', accountingController.getBalance);
+router.get('/by-category', accountingController.getByCategory);
 
 router.get('/opening-balance', accountingController.getOpeningBalance);
 router.put('/opening-balance', accountingController.setOpeningBalance);

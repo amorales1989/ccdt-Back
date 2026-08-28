@@ -33,10 +33,10 @@ const canWrite = (req) => WRITE_ROLES.includes(req.profile?.role);
 const validDeptParam = (id) => typeof id === 'string' && UUID_RE.test(id);
 
 const accountingController = {
-  // GET /api/accounting/transactions?department_id=&from=&to=&type=
+  // GET /api/accounting/transactions?department_id=&from=&to=&type=&assigned_class=
   getTransactions: async (req, res, next) => {
     try {
-      const { department_id, from, to, type } = req.query;
+      const { department_id, from, to, type, assigned_class } = req.query;
       if (!hasReadAccess(req)) throw err('No tienes acceso a la contabilidad', 403);
       if (!validDeptParam(department_id)) throw err('department_id invalido', 400);
 
@@ -50,6 +50,7 @@ const accountingController = {
         .eq('department_id', department_id);
 
       if (type && ['ingreso', 'egreso'].includes(type)) query = query.eq('type', type);
+      if (assigned_class) query = query.eq('assigned_class', assigned_class);
       if (from) query = query.gte('movement_date', from);
       if (to) query = query.lte('movement_date', to);
 
@@ -63,7 +64,7 @@ const accountingController = {
   // POST /api/accounting/transactions
   createTransaction: async (req, res, next) => {
     try {
-      const { department_id, type, amount, category, description, movement_date } = req.body;
+      const { department_id, type, amount, category, description, movement_date, assigned_class } = req.body;
       if (!canWrite(req)) throw err('No tienes permiso para crear movimientos', 403);
       if (!validDeptParam(department_id)) throw err('department_id invalido', 400);
       if (!['ingreso', 'egreso'].includes(type)) throw err('type debe ser ingreso o egreso', 400);
@@ -86,6 +87,7 @@ const accountingController = {
           category: category?.trim() || null,
           description: description?.trim() || null,
           movement_date,
+          assigned_class: assigned_class?.trim() || null,
           created_by: req.user.id
         }])
         .select('*, departments(name), profiles:created_by(first_name, last_name)')
@@ -100,7 +102,7 @@ const accountingController = {
   updateTransaction: async (req, res, next) => {
     try {
       const { id } = req.params;
-      const { type, amount, category, description, movement_date } = req.body;
+      const { type, amount, category, description, movement_date, assigned_class } = req.body;
       if (!canWrite(req)) throw err('No tienes permiso para editar movimientos', 403);
       if (!validDeptParam(id)) throw err('id invalido', 400);
 
@@ -128,6 +130,7 @@ const accountingController = {
       if (category !== undefined) updates.category = category?.trim() || null;
       if (description !== undefined) updates.description = description?.trim() || null;
       if (movement_date !== undefined) updates.movement_date = movement_date;
+      if (assigned_class !== undefined) updates.assigned_class = assigned_class?.trim() || null;
       updates.updated_at = new Date().toISOString();
 
       const { data, error } = await supabaseAdmin
@@ -195,10 +198,42 @@ const accountingController = {
     } catch (error) { next(error); }
   },
 
-  // GET /api/accounting/balance?department_id=&from=&to=
+  // GET /api/accounting/by-category?department_id=&from=&to=&assigned_class=
+  // Totales por motivo para la tab "Por motivos" (la agregación la hace el SP).
+  getByCategory: async (req, res, next) => {
+    try {
+      const { department_id, from, to, assigned_class } = req.query;
+      if (!hasReadAccess(req)) throw err('No tienes acceso a la contabilidad', 403);
+      if (!validDeptParam(department_id)) throw err('department_id invalido', 400);
+
+      const allowed = await allowedDeptIds(req);
+      if (!allowed.includes(department_id)) throw err('Sin acceso a este departamento', 403);
+
+      const { data, error } = await supabaseAdmin.schema('api').rpc('contabilidad_por_motivo', {
+        p_company_id: req.companyId,
+        p_department_id: department_id,
+        p_from: from || null,
+        p_to: to || null,
+        p_assigned_class: assigned_class || null,
+      });
+      if (error) throw error;
+
+      res.json({
+        success: true,
+        data: (data || []).map(r => ({
+          category: r.category,
+          type: r.type,
+          total: Number(r.total || 0),
+          cantidad: Number(r.cantidad || 0),
+        }))
+      });
+    } catch (error) { next(error); }
+  },
+
+  // GET /api/accounting/balance?department_id=&from=&to=&assigned_class=
   getBalance: async (req, res, next) => {
     try {
-      const { department_id, from, to } = req.query;
+      const { department_id, from, to, assigned_class } = req.query;
       if (!hasReadAccess(req)) throw err('No tienes acceso a la contabilidad', 403);
       if (!validDeptParam(department_id)) throw err('department_id invalido', 400);
 
@@ -212,6 +247,8 @@ const accountingController = {
         p_department_id: department_id,
         p_from: from || null,
         p_to: to || null,
+        // Filtrando por clase el saldo inicial no aplica (se carga por departamento): el SP devuelve 0.
+        p_assigned_class: assigned_class || null,
       });
       if (error) throw error;
 
