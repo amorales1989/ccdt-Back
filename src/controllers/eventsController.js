@@ -41,8 +41,9 @@ const eventsController = {
         .select('*')
         .eq('company_id', req.companyId);
 
-      // Un evento de varios días sigue vigente hasta su end_date.
-      if (from) query = query.or(`end_date.gte.${from},and(end_date.is.null,date.gte.${from})`);
+      // Un evento de varios días sigue vigente hasta su end_date. Se compara contra ambas fechas:
+      // si el end_date quedó mal cargado (anterior a date), el evento igual se sigue mostrando.
+      if (from) query = query.or(`date.gte.${from},end_date.gte.${from}`);
 
       const { data, error } = await query.order('date', { ascending: true });
 
