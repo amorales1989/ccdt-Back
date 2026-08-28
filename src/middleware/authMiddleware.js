@@ -65,20 +65,25 @@ const authMiddleware = async (req, res, next) => {
         const lastActive = profile.last_active_at ? new Date(profile.last_active_at) : now;
         const diff = now.getTime() - lastActive.getTime();
 
-        // Lógica de detección de Login fresco para evitar falsos positivos de inactividad
-        let isFreshLogin = false;
-        let tokenIat = null;
+        // Momento del login real. OJO: `iat` no sirve para esto: supabase-js refresca el access
+        // token solo (al reabrir la app, o cada hora), y con un token recién emitido el usuario
+        // parecía "recién logueado", esquivando tanto el timeout por inactividad como el corte
+        // diario. `amr` lleva el timestamp del login y sobrevive a los refresh.
+        let loginAtMs = null;
         try {
             const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-            tokenIat = payload.iat;
-            const tokenAgeMs = now.getTime() - tokenIat * 1000;
-
-            if (tokenAgeMs < 5 * 60 * 1000) {
-                isFreshLogin = true;
-            }
+            const amrTimestamps = (Array.isArray(payload.amr) ? payload.amr : [])
+                .map(entry => entry && entry.timestamp)
+                .filter(ts => typeof ts === 'number');
+            const loginAtSec = amrTimestamps.length ? Math.max(...amrTimestamps) : payload.iat;
+            if (loginAtSec) loginAtMs = loginAtSec * 1000;
         } catch (e) {
             // Error decodificando token, seguimos con el flujo normal
         }
+
+        // Login fresco: evita el falso positivo en la primera llamada después de loguearse,
+        // cuando last_active_at todavía es el de la sesión anterior.
+        const isFreshLogin = loginAtMs !== null && (now.getTime() - loginAtMs) < 5 * 60 * 1000;
 
         if (!isFreshLogin && diff > INACTIVITY_LIMIT_MS) {
             // Invalidar sesión en Supabase. signOut espera el JWT de la sesión (no el user id).
@@ -170,9 +175,12 @@ const authMiddleware = async (req, res, next) => {
 
         // Cierre global de sesiones (cron 00:00, ver scheduler.js): Supabase no ofrece
         // revocación bulk, así que en vez de invalidar cada refresh token marcamos un corte
-        // por empresa y acá rechazamos cualquier token emitido antes de ese corte.
-        if (company?.sessions_invalidated_at && tokenIat &&
-            tokenIat * 1000 < new Date(company.sessions_invalidated_at).getTime()) {
+        // por empresa y acá rechazamos cualquier sesión iniciada antes de ese corte.
+        if (company?.sessions_invalidated_at && loginAtMs &&
+            loginAtMs < new Date(company.sessions_invalidated_at).getTime()) {
+            // Matar también el refresh token: si no, supabase-js sigue emitiendo access tokens
+            // nuevos y el usuario vuelve a entrar solo con solo recargar la página.
+            await supabaseAdmin.auth.admin.signOut(token, 'global');
             return res.status(401).json({
                 success: false,
                 code: 'SESSION_REVOKED',
