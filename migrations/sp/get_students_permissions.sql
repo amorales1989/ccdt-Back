@@ -15,13 +15,13 @@
 -- Si se corre al reves, GET /api/students devuelve 403 hasta que salga el deploy.
 
 -- 1. Fijar search_path (no hace falta reescribir el cuerpo de la funcion).
-ALTER FUNCTION public.get_students(integer, uuid, text, text, text)
+ALTER FUNCTION public.get_students(integer, uuid, text, text, text, uuid[], text)
   SET search_path = public, pg_temp;
 
 -- 2. Quitar el EXECUTE que Postgres otorga por defecto.
-REVOKE ALL ON FUNCTION public.get_students(integer, uuid, text, text, text)
+REVOKE ALL ON FUNCTION public.get_students(integer, uuid, text, text, text, uuid[], text)
   FROM PUBLIC, anon, authenticated;
 
 -- 3. Dejarlo solo para el back (service_role).
-GRANT EXECUTE ON FUNCTION public.get_students(integer, uuid, text, text, text)
+GRANT EXECUTE ON FUNCTION public.get_students(integer, uuid, text, text, text, uuid[], text)
   TO service_role;

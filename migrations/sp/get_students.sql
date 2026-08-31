@@ -1,4 +1,13 @@
--- Agrega las columnas baptized y small_groups_count al SP get_students
+-- SP de listado de miembros (GET /api/students).
+--
+-- Agrega p_scope_department_ids / p_scope_class: el recorte por rol que ListarAlumnos
+-- hacia en el browser (traia TODA la empresa + TODAS las student_authorizations y
+-- filtraba en JS, con el corte silencioso de 1000 filas de PostgREST) ahora se resuelve
+-- acá. El back deriva el scope de req.profile, nunca del cliente.
+--   p_scope_department_ids = NULL  -> sin recorte (admin/secretaria)
+--   p_scope_department_ids = '{}'  -> ningun departamento -> 0 filas
+--   p_scope_class          = NULL  -> todas las clases de esos departamentos
+--
 -- (requiere DROP porque cambia el tipo de retorno).
 -- Ejecutar DESPUÉS de add_baptized_field.sql y add_small_groups.sql.
 --
@@ -9,6 +18,7 @@
 BEGIN;
 
 DROP FUNCTION IF EXISTS get_students(integer, uuid, text, text, text);
+DROP FUNCTION IF EXISTS get_students(integer, uuid, text, text, text, uuid[], text);
 
 -- Índices de apoyo para small_group_counts (add_small_groups.sql solo crea los únicos
 -- parciales por group_id, que no sirven para buscar por persona).
@@ -22,7 +32,9 @@ CREATE OR REPLACE FUNCTION get_students(
   p_department_id  uuid    DEFAULT NULL,
   p_assigned_class text    DEFAULT NULL,
   p_gender         text    DEFAULT NULL,
-  p_search         text    DEFAULT NULL
+  p_search         text    DEFAULT NULL,
+  p_scope_department_ids uuid[] DEFAULT NULL,
+  p_scope_class    text    DEFAULT NULL
 )
 RETURNS TABLE (
   id                       uuid,
@@ -89,11 +101,66 @@ authorized_ids AS (
     AND sa.company_id = p_company_id
 ),
 
--- CTE 3: todos los IDs a devolver
+-- CTE 3a: recorte por rol - alumnos de los departamentos del usuario.
+-- Replica lo que hacia ListarAlumnos en JS: pertenece al depto por la columna
+-- students.department_id o por una inscripcion en student_departments, y la clase
+-- matchea a nivel alumno o en la inscripcion de ese depto.
+scope_ids AS (
+  SELECT s.id AS student_id
+  FROM students s
+  WHERE p_scope_department_ids IS NOT NULL
+    AND s.company_id = p_company_id
+    AND s.deleted_at IS NULL
+    AND (
+      s.department_id = ANY(p_scope_department_ids)
+      OR EXISTS (
+        SELECT 1 FROM student_departments sd
+        WHERE sd.student_id = s.id
+          AND sd.department_id = ANY(p_scope_department_ids)
+      )
+    )
+    AND (
+      p_scope_class IS NULL
+      OR s.assigned_class ILIKE p_scope_class
+      OR EXISTS (
+        SELECT 1 FROM student_departments sd2
+        WHERE sd2.student_id = s.id
+          AND sd2.department_id = ANY(p_scope_department_ids)
+          AND sd2.assigned_class ILIKE p_scope_class
+      )
+    )
+),
+
+-- CTE 3b: recorte por rol - alumnos de otro depto autorizados a los mios.
+-- class NULL o 'all' en la autorizacion = vale para cualquier clase.
+scope_authorized_ids AS (
+  SELECT DISTINCT sa.student_id
+  FROM student_authorizations sa
+  WHERE p_scope_department_ids IS NOT NULL
+    AND sa.company_id = p_company_id
+    AND sa.department_id = ANY(p_scope_department_ids)
+    AND (
+      p_scope_class IS NULL
+      OR sa.class IS NULL
+      OR sa.class = 'all'
+      OR sa.class ILIKE p_scope_class
+    )
+),
+
+-- CTE 3: todos los IDs a devolver (los filtros explicitos, recortados por el scope del rol)
 all_ids AS (
-  SELECT student_id FROM dept_ids
-  UNION
-  SELECT student_id FROM authorized_ids
+  SELECT base.student_id
+  FROM (
+    SELECT student_id FROM dept_ids
+    UNION
+    SELECT student_id FROM authorized_ids
+  ) base
+  WHERE p_scope_department_ids IS NULL
+     OR base.student_id IN (
+       SELECT student_id FROM scope_ids
+       UNION
+       SELECT student_id FROM scope_authorized_ids
+     )
 ),
 
 -- CTE 4: dept_assignments agregados por alumno (sin llamadas a auth.users)
@@ -165,7 +232,9 @@ SELECT
   COALESCE(p.baptized, s.baptized)           AS baptized,
   s.company_id,
   s.created_at,
-  (ai.student_id IS NOT NULL) AS is_authorized,
+  -- Aparece en la lista por una autorizacion y no por ser de mi depto/clase.
+  (ai.student_id IS NOT NULL
+    OR (sai.student_id IS NOT NULL AND sci.student_id IS NULL)) AS is_authorized,
   COALESCE(ec.cnt, 0)          AS active_enrollments_count,
   COALESCE(sgc.cnt, 0)         AS small_groups_count,
   COALESCE(asgn.dept_assignments, '[]'::jsonb) AS dept_assignments
@@ -174,6 +243,8 @@ JOIN all_ids ON all_ids.student_id = s.id
 LEFT JOIN profiles p        ON p.id = s.profile_id
 LEFT JOIN dept_ids di       ON di.student_id = s.id
 LEFT JOIN authorized_ids ai ON ai.student_id = s.id
+LEFT JOIN scope_ids sci     ON sci.student_id = s.id
+LEFT JOIN scope_authorized_ids sai ON sai.student_id = s.id
 LEFT JOIN departments dep   ON dep.id = s.department_id
 LEFT JOIN assignments asgn  ON asgn.student_id = s.id
 LEFT JOIN enrollment_counts ec ON ec.student_id = s.id
@@ -192,11 +263,16 @@ $$;
 
 -- Re-aplicar el hardening que el DROP se llevó puesto (ver get_students_permissions.sql).
 -- La funcion es SECURITY DEFINER: sin search_path fijo se puede secuestrar.
-ALTER FUNCTION public.get_students(integer, uuid, text, text, text)
+ALTER FUNCTION public.get_students(integer, uuid, text, text, text, uuid[], text)
   SET search_path = public, pg_temp;
 
--- NO se agrega aca el REVOKE FROM PUBLIC, anon, authenticated: studentsController.js:21
--- todavia llama al RPC con el cliente anon, asi que revocar rompe GET /api/students con 403.
--- Cuando ese controller pase a supabaseAdmin, correr get_students_permissions.sql.
+-- Cambia la firma de la funcion: PostgREST tiene que recargar su cache de schema,
+-- si no el RPC responde PGRST202 hasta el proximo reload.
+NOTIFY pgrst, 'reload schema';
+
+-- El REVOKE FROM PUBLIC, anon, authenticated vive en get_students_permissions.sql y hay que
+-- volver a correrlo despues de este archivo: el DROP se lleva los grants y el CREATE en
+-- `public` vuelve a otorgar EXECUTE a PUBLIC. El controller llama con supabaseAdmin
+-- (service_role), asi que el REVOKE no rompe GET /api/students.
 
 COMMIT;

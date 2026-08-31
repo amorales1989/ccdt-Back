@@ -17,6 +17,42 @@ const ARCHIVE_ROLES = ['admin', 'secretaria', 'director_general'];
 // y el archivo filtra por él, así que no se cambian una vez que hay datos.
 const MOTIVOS_BAJA = ['mudanza', 'dejo_de_asistir', 'cambio_iglesia', 'fallecimiento', 'duplicado', 'otro'];
 
+// Recorte por rol de GET /api/students?scope=mine (pantalla Listar miembros).
+// Antes lo hacía el front en JS bajándose toda la empresa; ahora lo resuelve el SP.
+const ALL_STUDENTS_ROLES = ['admin', 'secretaria'];
+const DEPT_SCOPE_ROLES = ['director', 'director_general', 'vicedirector'];
+
+// null = sin recorte. { ids: [], class } = no ve a nadie.
+const resolveStudentScope = async (profile, companyId) => {
+  const role = profile?.role;
+  if (ALL_STUDENTS_ROLES.includes(role)) return null;
+
+  if (DEPT_SCOPE_ROLES.includes(role)) {
+    // El perfil guarda los departamentos por nombre; el SP los quiere por id.
+    const ids = new Set();
+    if (profile?.department_id) ids.add(profile.department_id);
+    const names = Array.isArray(profile?.departments) ? profile.departments : [];
+    if (names.length) {
+      const { data, error } = await supabaseAdmin
+        .from('departments')
+        .select('id')
+        .eq('company_id', companyId)
+        .in('name', names);
+      if (error) throw error;
+      (data || []).forEach(d => ids.add(d.id));
+    }
+    return { ids: [...ids], class: null };
+  }
+
+  // Maestro/líder/auxiliar: solo su departamento y su clase.
+  if (profile?.department_id && profile?.assigned_class) {
+    return { ids: [profile.department_id], class: profile.assigned_class };
+  }
+
+  // Sin departamento asignado no ve a nadie (misma regla que tenía el front).
+  return { ids: [], class: null };
+};
+
 const studentsController = {
   // POST /api/students/check-birthdays
   checkAndNotifyBirthdays: async (req, res, next) => {
@@ -31,14 +67,23 @@ const studentsController = {
   // GET /api/students
   getAll: async (req, res, next) => {
     try {
-      const { department_id, assigned_class, gender, search } = req.query;
+      const { department_id, assigned_class, gender, search, scope } = req.query;
 
-      const { data, error } = await supabase.rpc('get_students', {
+      // scope=mine: el back deriva el recorte del perfil, nunca del cliente.
+      const roleScope = scope === 'mine'
+        ? await resolveStudentScope(req.profile, req.companyId)
+        : null;
+
+      // supabaseAdmin (service_role): get_students tiene el EXECUTE revocado para
+      // anon/authenticated (ver get_students_permissions.sql).
+      const { data, error } = await supabaseAdmin.rpc('get_students', {
         p_company_id:     req.companyId,
         p_department_id:  department_id  || null,
         p_assigned_class: (assigned_class && assigned_class !== 'all') ? assigned_class : null,
         p_gender:         gender          || null,
         p_search:         search          || null,
+        p_scope_department_ids: roleScope ? roleScope.ids : null,
+        p_scope_class:          roleScope ? roleScope.class : null,
       });
 
       if (error) throw error;
