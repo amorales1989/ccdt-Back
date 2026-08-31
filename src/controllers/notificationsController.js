@@ -1,6 +1,6 @@
 const { supabase, supabaseAdmin } = require('../config/supabase');
 const NotificationService = require('../services/notificationService');
-const WhatsAppService = require('../services/whatsappService');
+const EmailService = require('../services/emailService');
 
 const ALLOWED_ROLES = ['admin', 'secretaria'];
 const STAFF_ROLES = ['lider', 'maestro', 'colaborador', 'auxiliar_maestro', 'director', 'vicedirector'];
@@ -20,7 +20,7 @@ async function resolveRecipients(target, companyId) {
   if (target.type === 'people') {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, first_name, last_name, role, phone')
+      .select('id, first_name, last_name, role, phone, email')
       .eq('company_id', companyId)
       .in('id', target.profile_ids);
     if (error) throw error;
@@ -31,7 +31,7 @@ async function resolveRecipients(target, companyId) {
   // y filtramos en JS para contemplar role primario, roles[] (multi-rol) y assignments[] (rol+depto)
   const { data: profiles, error } = await supabase
     .from('profiles')
-    .select('id, first_name, last_name, role, roles, phone, department_id, departments, assigned_class, assignments')
+    .select('id, first_name, last_name, role, roles, phone, email, department_id, departments, assigned_class, assignments')
     .eq('company_id', companyId);
   if (error) throw error;
 
@@ -96,6 +96,7 @@ async function resolveRecipients(target, companyId) {
     last_name: p.last_name,
     role: p.role,
     phone: p.phone,
+    email: p.email,
   }));
 }
 
@@ -126,6 +127,19 @@ async function buildTargetLabel(target, companyId, recipients) {
   }
 }
 
+// El mail de la persona es el de su usuario (auth.users): profiles.email lo tienen cargado
+// pocos y algunos quedaron desactualizados. Devuelve Map(profile_id -> email).
+async function emailsByProfileId(ids) {
+  const wanted = new Set(ids);
+  const map = new Map();
+  for (let page = 1; ; page++) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) throw error;
+    data.users.forEach(u => { if (u.email && wanted.has(u.id)) map.set(u.id, u.email); });
+    if (data.users.length < 1000) return map;
+  }
+}
+
 // Registra el envío en notification_broadcasts; devuelve el id (o null si falla)
 async function saveBroadcastHistory(row) {
   try {
@@ -142,18 +156,6 @@ async function saveBroadcastHistory(row) {
   }
 }
 
-// Actualiza wa_sent cuando termina el envío en background
-function updateHistoryWaSent(historyId, sent) {
-  if (!historyId) return;
-  supabaseAdmin
-    .from('notification_broadcasts')
-    .update({ wa_sent: sent })
-    .eq('id', historyId)
-    .then(({ error }) => {
-      if (error) console.error('[Broadcast] Error actualizando wa_sent:', error.message);
-    });
-}
-
 // POST /api/notifications/broadcast
 exports.broadcast = async (req, res, next) => {
   try {
@@ -166,14 +168,15 @@ exports.broadcast = async (req, res, next) => {
     const linkTrimmed = link && String(link).trim() !== '' ? String(link).trim() : null;
 
     // Validaciones básicas
-    if (!channel || !['push', 'whatsapp'].includes(channel)) {
-      return res.status(400).json({ success: false, message: 'channel debe ser "push" o "whatsapp"' });
+    // WhatsApp queda fuera del broadcast a propósito: satura la sesión de WA de la empresa.
+    if (!channel || !['push', 'email'].includes(channel)) {
+      return res.status(400).json({ success: false, message: 'channel debe ser "push" o "email"' });
     }
     if (!message) {
       return res.status(400).json({ success: false, message: 'message es requerido' });
     }
-    if (channel === 'push' && !title) {
-      return res.status(400).json({ success: false, message: 'title es requerido para channel "push"' });
+    if (!title) {
+      return res.status(400).json({ success: false, message: 'title es requerido (título del push / asunto del mail)' });
     }
     if (!target || !target.type) {
       return res.status(400).json({ success: false, message: 'target.type es requerido' });
@@ -193,7 +196,6 @@ exports.broadcast = async (req, res, next) => {
 
     const recipients = await resolveRecipients(target, req.companyId);
 
-    const waMessage = linkTrimmed ? `${message}\n\n${linkTrimmed}` : message;
     const targetLabel = await buildTargetLabel(target, req.companyId, recipients);
     const historyBase = {
       company_id: req.companyId,
@@ -207,32 +209,34 @@ exports.broadcast = async (req, res, next) => {
       recipients: recipients.length,
     };
 
-    if (channel === 'whatsapp') {
-      const waRecipients = recipients
-        .filter(p => p.phone && String(p.phone).trim() !== '')
-        .map(p => ({ phone: p.phone, name: `${p.first_name || ''} ${p.last_name || ''}`.trim() }));
+    if (channel === 'email') {
+      const authEmails = await emailsByProfileId(recipients.map(p => p.id));
+      const withEmail = recipients
+        .map(p => ({
+          email: authEmails.get(p.id) || p.email,
+          name: `${p.first_name || ''} ${p.last_name || ''}`.trim(),
+        }))
+        .filter(p => p.email && String(p.email).trim() !== '');
 
-      const historyId = await saveBroadcastHistory(historyBase);
-
-      // fire-and-forget
-      WhatsAppService.sendBulkMessages(req.companyId, waRecipients, waMessage)
-        .then(result => {
-          console.log(`[Broadcast WA] companyId=${req.companyId} sent=${result.sent} failed=${result.failed}`);
-          updateHistoryWaSent(historyId, result.sent);
-        })
-        .catch(err => console.error('[Broadcast WA] Error en background:', err.message));
+      const result = await EmailService.sendBulk(withEmail, title, message, linkTrimmed);
+      await saveBroadcastHistory({ ...historyBase, email_sent: result.sent });
 
       return res.json({
         success: true,
         recipients: recipients.length,
         channel,
-        whatsapp: { queued: waRecipients.length }
+        email: {
+          sent: result.sent,
+          failed: result.failed,
+          skipped: result.skipped,
+          withoutEmail: recipients.length - withEmail.length,
+        },
       });
     }
 
     // channel === 'push'
     let pushSent = 0;
-    const waFallback = [];
+    let notDelivered = 0;
 
     for (const profile of recipients) {
       try {
@@ -244,42 +248,24 @@ exports.broadcast = async (req, res, next) => {
           linkTrimmed || '/'
         );
 
-        // Sin tokens (success === false) o con todos los envíos fallidos (successCount 0):
-        // el push no llegó, va por WhatsApp.
+        // Sin tokens (success === false) o con todos los envíos fallidos (successCount 0): no llegó.
+        // Antes se derivaba a WhatsApp; se sacó para no saturar la sesión de WA.
         const delivered = !!(result && result.success !== false && (result.successCount === undefined || result.successCount > 0));
-        if (!delivered) {
-          if (profile.phone && String(profile.phone).trim() !== '') {
-            waFallback.push({ phone: profile.phone, name: `${profile.first_name || ''} ${profile.last_name || ''}`.trim() });
-          }
-        } else {
-          pushSent++;
-        }
+        if (delivered) pushSent++;
+        else notDelivered++;
       } catch (err) {
         console.error(`[Broadcast Push] Error enviando a ${profile.id}:`, err.message);
-        if (profile.phone && String(profile.phone).trim() !== '') {
-          waFallback.push({ phone: profile.phone, name: `${profile.first_name || ''} ${profile.last_name || ''}`.trim() });
-        }
+        notDelivered++;
       }
     }
 
-    const historyId = await saveBroadcastHistory({ ...historyBase, push_sent: pushSent });
-
-    // Fallback WhatsApp fire-and-forget
-    if (waFallback.length > 0) {
-      WhatsAppService.sendBulkMessages(req.companyId, waFallback, waMessage)
-        .then(result => {
-          console.log(`[Broadcast Fallback WA] sent=${result.sent} failed=${result.failed}`);
-          updateHistoryWaSent(historyId, result.sent);
-        })
-        .catch(err => console.error('[Broadcast Fallback WA] Error en background:', err.message));
-    }
+    await saveBroadcastHistory({ ...historyBase, push_sent: pushSent });
 
     return res.json({
       success: true,
       recipients: recipients.length,
       channel,
-      push: { sent: pushSent, fallbackToWa: waFallback.length },
-      whatsapp: { queued: waFallback.length }
+      push: { sent: pushSent, notDelivered },
     });
   } catch (error) {
     next(error);
@@ -296,7 +282,7 @@ exports.getBroadcasts = async (req, res, next) => {
 
     const { data, error } = await supabaseAdmin
       .from('notification_broadcasts')
-      .select('id, channel, title, message, link, target_type, target_label, recipients, push_sent, wa_sent, created_at')
+      .select('id, channel, title, message, link, target_type, target_label, recipients, push_sent, email_sent, created_at')
       .eq('company_id', req.companyId)
       .order('created_at', { ascending: false })
       .limit(50);
