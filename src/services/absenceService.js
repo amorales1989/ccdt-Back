@@ -9,6 +9,14 @@ const ABSENCE_WEEKS = 4;
 // (igual sirve para deduplicar: no vuelve a cambiar mientras siga ausente).
 const LOOKBACK_WEEKS = 26;
 
+// "Obrero" en la jerga del ministerio incluye maestros, lideres, colaboradores y auxiliares:
+// todo el que sirve en el depto y no es alumno. El rol vive en student_departments; a los
+// cargados como primarios (sin fila puente) se los detecta por la clase "Obreros".
+const WORKER_ROLES = ['maestro', 'lider', 'colaborador', 'auxiliar_maestro', 'obrero'];
+const isStaff = (s) =>
+    WORKER_ROLES.includes((s.role_in_dept || '').toLowerCase()) ||
+    (s.assigned_class || '').toLowerCase() === 'obreros';
+
 // Ayer en zona horaria de Argentina (YYYY-MM-DD)
 const yesterdayInAR = () => {
     const d = new Date();
@@ -89,6 +97,19 @@ class AbsenceService {
         const notificationsSent = [];
         const waQueue = [];
 
+        // Los directores generales trabajan sobre varios departamentos (profiles.departments guarda
+        // los NOMBRES), asi que quedan fuera del loop por depto: reciben un unico mensaje con los
+        // obreros/maestros ausentes (no alumnos) agrupados por departamento.
+        const { data: directoresGenerales } = await supabase
+            .from('profiles')
+            .select('id, first_name, phone, departments')
+            .or(anyRole(['director_general']))
+            .eq('company_id', companyId);
+        const dgDeptNames = new Set(
+            (directoresGenerales || []).flatMap((dg) => (dg.departments || []).map((n) => (n || '').toLowerCase()))
+        );
+        const staffAbsencesByDept = new Map();
+
         for (const dept of dueDepartments) {
             const dates = lastScheduledDates(dept.activity_days, yesterday, LOOKBACK_WEEKS);
             if (dates.length < ABSENCE_WEEKS) continue; // depto sin historial suficiente aún
@@ -103,7 +124,7 @@ class AbsenceService {
                     .is('deleted_at', null),
                 supabase
                     .from('student_departments')
-                    .select('student_id, assigned_class, students!inner(id, first_name, last_name, deleted_at)')
+                    .select('student_id, assigned_class, role_in_dept, students!inner(id, first_name, last_name, deleted_at)')
                     .eq('department_id', dept.id)
                     .eq('company_id', companyId)
                     .is('students.deleted_at', null),
@@ -112,12 +133,19 @@ class AbsenceService {
             const roster = new Map();
             (primary || []).forEach((s) => roster.set(s.id, s));
             (secondary || []).forEach((a) => {
-                if (roster.has(a.student_id)) return;
+                const existing = roster.get(a.student_id);
+                if (existing) {
+                    // El rol en el depto solo existe en la tabla puente: sin esto, un maestro que
+                    // ademas tiene el depto como primario pasaria por alumno.
+                    existing.role_in_dept = a.role_in_dept || existing.role_in_dept;
+                    return;
+                }
                 roster.set(a.student_id, {
                     id: a.student_id,
                     first_name: a.students.first_name,
                     last_name: a.students.last_name,
                     assigned_class: a.assigned_class,
+                    role_in_dept: a.role_in_dept,
                 });
             });
             if (roster.size === 0) continue;
@@ -175,15 +203,28 @@ class AbsenceService {
             );
             if (newlyAbsentStudents.length === 0) continue;
 
-            const { data: leaders } = await supabase
+            const { data: profilesInDept } = await supabase
                 .from('profiles')
-                .select('id, first_name, phone, role, assigned_class')
+                .select('id, first_name, phone, role, roles, assigned_class')
                 .or(anyRole(absenceRoles))
                 .eq('department_id', dept.id)
                 .eq('company_id', companyId);
-            if (!leaders || leaders.length === 0) continue;
+            // El director general se notifica aparte, aunque este en absenceRoles y tenga este depto.
+            const leaders = (profilesInDept || []).filter(
+                (p) => p.role !== 'director_general' && !(p.roles || []).includes('director_general')
+            );
 
             const notifiedStudentIds = new Set();
+
+            const staffAbsent = newlyAbsentStudents.filter(isStaff);
+            if (staffAbsent.length > 0 && dgDeptNames.has((dept.name || '').toLowerCase())) {
+                staffAbsencesByDept.set(dept.name, {
+                    deptName: dept.name,
+                    names: staffAbsent.map((s) => `${s.first_name} ${s.last_name}`),
+                    ids: staffAbsent.map((s) => s.id),
+                });
+                staffAbsent.forEach((s) => notifiedStudentIds.add(s.id));
+            }
 
             for (const leader of leaders) {
                 const relevant = newlyAbsentStudents.filter((s) =>
@@ -235,6 +276,40 @@ class AbsenceService {
                 if (upsertErr) {
                     console.error(`❌ [AbsenceService] Error guardando notificaciones de dept ${dept.id}:`, upsertErr.message);
                 }
+            }
+        }
+
+        for (const dg of directoresGenerales || []) {
+            const myDepts = (dg.departments || []).map((n) => (n || '').toLowerCase());
+            const groups = [...staffAbsencesByDept.values()].filter((g) =>
+                myDepts.includes((g.deptName || '').toLowerCase())
+            );
+            if (groups.length === 0) continue;
+
+            const total = groups.reduce((acc, g) => acc + g.names.length, 0);
+            const tail = `${total === 1 ? 'Lleva' : 'Llevan'} ${ABSENCE_WEEKS} semanas consecutivas sin asistir`;
+            const title = '⚠️ Ausencias de obreros';
+            const body = `${groups.map((g) => `${g.deptName}:\n${g.names.join(', ')}`).join('\n\n')}\n\n${tail}`;
+
+            try {
+                const result = await NotificationService.enviarAUsuario(dg.id, { titulo: title, cuerpo: body }, {
+                    tipo: 'ausencias',
+                    studentIds: JSON.stringify(groups.flatMap((g) => g.ids)),
+                });
+                notificationsSent.push({ leaderId: dg.id, dept: 'obreros', success: result.success, type: 'fcm' });
+            } catch (notifyError) {
+                console.error(`❌ [AbsenceService] Error notificando (push) al director general ${dg.id}:`, notifyError.message);
+            }
+
+            if (dg.phone) {
+                const waBody = groups.map((g) => `*${g.deptName}*\n${g.names.join(', ')}`).join('\n\n');
+                waQueue.push({
+                    phone: dg.phone,
+                    message: `⚠️ *Ausencias de obreros*\n\n${waBody}\n\n${tail}\n\n_Enviado automáticamente por Nexus Bot_`,
+                    name: dg.first_name,
+                    leaderId: dg.id,
+                    dept: 'obreros',
+                });
             }
         }
 
