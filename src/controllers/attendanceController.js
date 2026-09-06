@@ -325,7 +325,28 @@ const attendanceController = {
             const { data, error } = await query.select('id');
 
             if (error) throw error;
-            res.json({ success: true, deleted: data?.length || 0 });
+
+            // Si ese día estaba marcado como "no hubo clase", el evento también se va: si no,
+            // la fecha queda pintada en el reporte y el unique impide volver a marcarla.
+            let eventQuery = supabaseAdmin
+                .from('class_events')
+                .delete()
+                .eq('date', date)
+                .eq('company_id', req.companyId);
+
+            if (department_id) {
+                eventQuery = eventQuery.eq('department_id', department_id);
+            }
+            // Con clase puntual solo se borra el evento de esa clase; el de todo el
+            // departamento (assigned_class null) afecta a las demás y se deja.
+            if (assigned_class) {
+                eventQuery = eventQuery.eq('assigned_class', assigned_class);
+            }
+
+            const { data: eventos, error: eventError } = await eventQuery.select('id');
+            if (eventError) throw eventError;
+
+            res.json({ success: true, deleted: data?.length || 0, deletedEvents: eventos?.length || 0 });
         } catch (error) {
             next(error);
         }

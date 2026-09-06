@@ -25,10 +25,26 @@ const allowedDeptIds = async (req) => {
   return (data || []).map(d => d.id);
 };
 
-const hasReadAccess = (req) =>
-  READ_ALL_ROLES.includes(req.profile?.role) || READ_SCOPED_ROLES.includes(req.profile?.role);
+// Roles propios de la empresa (profiles.roles, fuera del enum app_role) con la contabilidad
+// habilitada en companies.role_permissions. Tener el menú habilitado = manejarla completa:
+// no hay modo solo-lectura para estos roles (ej. "Contador").
+const tieneContabilidadPorRolPropio = async (req) => {
+  const propios = (req.profile?.roles || []).filter(r => typeof r === 'string' && r.startsWith('custom_'));
+  if (!propios.length) return false;
 
-const canWrite = (req) => WRITE_ROLES.includes(req.profile?.role);
+  const { data } = await supabaseAdmin
+    .from('companies').select('role_permissions').eq('id', req.companyId).single();
+  const permisos = data?.role_permissions || {};
+  return propios.some(r => permisos[r]?.menu_contabilidad === true);
+};
+
+const hasReadAccess = async (req) =>
+  READ_ALL_ROLES.includes(req.profile?.role)
+  || READ_SCOPED_ROLES.includes(req.profile?.role)
+  || await tieneContabilidadPorRolPropio(req);
+
+const canWrite = async (req) =>
+  WRITE_ROLES.includes(req.profile?.role) || await tieneContabilidadPorRolPropio(req);
 
 const validDeptParam = (id) => typeof id === 'string' && UUID_RE.test(id);
 
@@ -37,7 +53,7 @@ const accountingController = {
   getTransactions: async (req, res, next) => {
     try {
       const { department_id, from, to, type, assigned_class } = req.query;
-      if (!hasReadAccess(req)) throw err('No tienes acceso a la contabilidad', 403);
+      if (!(await hasReadAccess(req))) throw err('No tienes acceso a la contabilidad', 403);
       if (!validDeptParam(department_id)) throw err('department_id invalido', 400);
 
       const allowed = await allowedDeptIds(req);
@@ -65,12 +81,13 @@ const accountingController = {
   createTransaction: async (req, res, next) => {
     try {
       const { department_id, type, amount, category, description, movement_date, assigned_class } = req.body;
-      if (!canWrite(req)) throw err('No tienes permiso para crear movimientos', 403);
+      if (!(await canWrite(req))) throw err('No tienes permiso para crear movimientos', 403);
       if (!validDeptParam(department_id)) throw err('department_id invalido', 400);
       if (!['ingreso', 'egreso'].includes(type)) throw err('type debe ser ingreso o egreso', 400);
       const amt = Number(amount);
       if (!Number.isFinite(amt) || amt <= 0) throw err('amount debe ser un numero mayor a 0', 400);
       if (!movement_date) throw err('movement_date es requerido', 400);
+      if (!category?.trim()) throw err('category es requerido', 400);
 
       const allowed = await allowedDeptIds(req);
       if (req.profile.role !== 'admin' && !allowed.includes(department_id)) {
@@ -84,7 +101,7 @@ const accountingController = {
           department_id,
           type,
           amount: amt,
-          category: category?.trim() || null,
+          category: category.trim(),
           description: description?.trim() || null,
           movement_date,
           assigned_class: assigned_class?.trim() || null,
@@ -103,7 +120,7 @@ const accountingController = {
     try {
       const { id } = req.params;
       const { type, amount, category, description, movement_date, assigned_class } = req.body;
-      if (!canWrite(req)) throw err('No tienes permiso para editar movimientos', 403);
+      if (!(await canWrite(req))) throw err('No tienes permiso para editar movimientos', 403);
       if (!validDeptParam(id)) throw err('id invalido', 400);
 
       const { data: existing, error: e1 } = await supabaseAdmin
@@ -127,7 +144,10 @@ const accountingController = {
         if (!Number.isFinite(amt) || amt <= 0) throw err('amount debe ser un numero mayor a 0', 400);
         updates.amount = amt;
       }
-      if (category !== undefined) updates.category = category?.trim() || null;
+      if (category !== undefined) {
+        if (!category?.trim()) throw err('category es requerido', 400);
+        updates.category = category.trim();
+      }
       if (description !== undefined) updates.description = description?.trim() || null;
       if (movement_date !== undefined) updates.movement_date = movement_date;
       if (assigned_class !== undefined) updates.assigned_class = assigned_class?.trim() || null;
@@ -149,7 +169,7 @@ const accountingController = {
   deleteTransaction: async (req, res, next) => {
     try {
       const { id } = req.params;
-      if (!canWrite(req)) throw err('No tienes permiso para eliminar movimientos', 403);
+      if (!(await canWrite(req))) throw err('No tienes permiso para eliminar movimientos', 403);
       if (!validDeptParam(id)) throw err('id invalido', 400);
 
       const { data: existing, error: e1 } = await supabaseAdmin
@@ -176,7 +196,7 @@ const accountingController = {
   getCategories: async (req, res, next) => {
     try {
       const { department_id, type } = req.query;
-      if (!hasReadAccess(req)) throw err('No tienes acceso a la contabilidad', 403);
+      if (!(await hasReadAccess(req))) throw err('No tienes acceso a la contabilidad', 403);
       if (!validDeptParam(department_id)) throw err('department_id invalido', 400);
 
       const allowed = await allowedDeptIds(req);
@@ -203,7 +223,7 @@ const accountingController = {
   getByCategory: async (req, res, next) => {
     try {
       const { department_id, from, to, assigned_class } = req.query;
-      if (!hasReadAccess(req)) throw err('No tienes acceso a la contabilidad', 403);
+      if (!(await hasReadAccess(req))) throw err('No tienes acceso a la contabilidad', 403);
       if (!validDeptParam(department_id)) throw err('department_id invalido', 400);
 
       const allowed = await allowedDeptIds(req);
@@ -234,7 +254,7 @@ const accountingController = {
   getBalance: async (req, res, next) => {
     try {
       const { department_id, from, to, assigned_class } = req.query;
-      if (!hasReadAccess(req)) throw err('No tienes acceso a la contabilidad', 403);
+      if (!(await hasReadAccess(req))) throw err('No tienes acceso a la contabilidad', 403);
       if (!validDeptParam(department_id)) throw err('department_id invalido', 400);
 
       const allowed = await allowedDeptIds(req);
@@ -268,7 +288,7 @@ const accountingController = {
   getOpeningBalance: async (req, res, next) => {
     try {
       const { department_id } = req.query;
-      if (!hasReadAccess(req)) throw err('No tienes acceso a la contabilidad', 403);
+      if (!(await hasReadAccess(req))) throw err('No tienes acceso a la contabilidad', 403);
       if (!validDeptParam(department_id)) throw err('department_id invalido', 400);
 
       const allowed = await allowedDeptIds(req);
@@ -288,7 +308,7 @@ const accountingController = {
   setOpeningBalance: async (req, res, next) => {
     try {
       const { department_id, opening_balance } = req.body;
-      if (!canWrite(req)) throw err('No tienes permiso para modificar el saldo inicial', 403);
+      if (!(await canWrite(req))) throw err('No tienes permiso para modificar el saldo inicial', 403);
       if (!validDeptParam(department_id)) throw err('department_id invalido', 400);
       const ob = Number(opening_balance);
       if (!Number.isFinite(ob)) throw err('opening_balance debe ser un numero', 400);
