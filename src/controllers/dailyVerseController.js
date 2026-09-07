@@ -2,12 +2,15 @@ const { supabaseAdmin } = require('../config/supabase');
 
 // Versículo del día.
 //
-// Fuente: bolls.life (nginx pelado, sin Cloudflare ni protección anti-bots). Antes esto
-// pegaba al "verse of the day" de BibleGateway, que desde el servidor de producción
-// devuelve 403: bloquean los rangos de IP de datacenter. Desde una conexión hogareña
-// andaba, por eso pasaba los tests locales.
-const API = (traduccion, libro, capitulo, versiculo) =>
-  `https://bolls.life/get-verse/${traduccion}/${libro}/${capitulo}/${versiculo}/`;
+// El calendario (qué versículo toca cada fecha) es el de verseoftheday.com, el devocional
+// del Heartlight Network que sale desde 1998: la selección la hace una persona, no un
+// algoritmo. Acá viajan solo las referencias —el texto lo pide el back a bolls.life en la
+// traducción que la empresa eligió en Configuración.
+//
+// Se usa bolls y no BibleGateway porque este último devuelve 403 a las IPs de datacenter:
+// desde una conexión hogareña anda, por eso pasaba los tests locales y fallaba en prod.
+const API = (traduccion, libro, capitulo) =>
+  `https://bolls.life/get-text/${traduccion}/${libro}/${capitulo}/`;
 
 // Clave guardada en companies.daily_verse_version -> id de la traducción en bolls.
 // TLA quedó afuera: no existe en ninguna API gratuita.
@@ -35,102 +38,160 @@ const LIBROS = {
   'Apocalipsis': 66,
 };
 
-// Uno por día del año (366 para cubrir los bisiestos). Intercalados por libro para que
-// dos días seguidos no caigan siempre en el mismo.
-const VERSICULOS = [
-  ['Salmos', 1, 1], ['Proverbios', 1, 7], ['Isaías', 1, 18], ['Mateo', 5, 3],
-  ['Juan', 1, 1], ['Romanos', 1, 16], ['Jeremías', 1, 5], ['Lamentaciones', 3, 22],
-  ['Josué', 1, 8], ['Deuteronomio', 6, 5], ['Éxodo', 14, 14], ['Génesis', 1, 1],
-  ['Números', 6, 24], ['1 Samuel', 16, 7], ['2 Crónicas', 7, 14], ['Nehemías', 8, 10],
-  ['Job', 19, 25], ['Eclesiastés', 3, 1], ['Miqueas', 6, 8], ['Sofonías', 3, 17],
-  ['Habacuc', 3, 19], ['Malaquías', 3, 10], ['Daniel', 2, 20], ['Ezequiel', 36, 26],
-  ['Oseas', 6, 3], ['Joel', 2, 25], ['Jonás', 2, 2], ['Zacarías', 4, 6],
-  ['Nahúm', 1, 7], ['Amós', 5, 24], ['Marcos', 9, 23], ['Lucas', 1, 37],
-  ['Hechos', 1, 8], ['1 Corintios', 1, 9], ['2 Corintios', 1, 3], ['Gálatas', 2, 20],
-  ['Efesios', 1, 7], ['Filipenses', 1, 6], ['Colosenses', 1, 16], ['1 Tesalonicenses', 5, 11],
-  ['2 Tesalonicenses', 3, 3], ['1 Timoteo', 4, 12], ['2 Timoteo', 1, 7], ['Tito', 3, 5],
-  ['Hebreos', 4, 12], ['Santiago', 1, 2], ['1 Pedro', 1, 3], ['2 Pedro', 1, 3],
-  ['1 Juan', 1, 9], ['3 Juan', 1, 4], ['Judas', 1, 24], ['Apocalipsis', 1, 8],
-  ['Salmos', 1, 2], ['Proverbios', 2, 6], ['Isaías', 6, 8], ['Mateo', 5, 6],
-  ['Juan', 1, 12], ['Romanos', 3, 23], ['Jeremías', 17, 7], ['Lamentaciones', 3, 23],
-  ['Josué', 1, 9], ['Deuteronomio', 31, 6], ['Éxodo', 15, 2], ['Génesis', 1, 27],
-  ['2 Crónicas', 16, 9], ['Eclesiastés', 3, 11], ['Miqueas', 7, 7], ['Marcos', 10, 27],
-  ['Lucas', 6, 31], ['Hechos', 2, 38], ['1 Corintios', 2, 9], ['2 Corintios', 3, 17],
-  ['Gálatas', 5, 1], ['Efesios', 2, 8], ['Filipenses', 2, 3], ['Colosenses', 2, 6],
-  ['1 Tesalonicenses', 5, 16], ['1 Timoteo', 6, 6], ['2 Timoteo', 2, 15], ['Hebreos', 4, 16],
-  ['Santiago', 1, 5], ['1 Pedro', 2, 9], ['2 Pedro', 3, 9], ['1 Juan', 3, 1],
-  ['Apocalipsis', 3, 20], ['Salmos', 3, 3], ['Proverbios', 3, 1], ['Isaías', 9, 6],
-  ['Mateo', 5, 9], ['Juan', 3, 16], ['Romanos', 5, 1], ['Jeremías', 29, 11],
-  ['Lamentaciones', 3, 25], ['Josué', 24, 15], ['Deuteronomio', 31, 8], ['Éxodo', 33, 14],
-  ['Génesis', 28, 15], ['Eclesiastés', 4, 9], ['Marcos', 10, 45], ['Lucas', 6, 38],
-  ['Hechos', 4, 12], ['1 Corintios', 6, 19], ['2 Corintios', 4, 16], ['Gálatas', 5, 13],
-  ['Efesios', 2, 10], ['Filipenses', 2, 4], ['Colosenses', 3, 2], ['1 Tesalonicenses', 5, 17],
-  ['1 Timoteo', 6, 12], ['2 Timoteo', 3, 16], ['Hebreos', 6, 10], ['Santiago', 1, 12],
-  ['1 Pedro', 3, 15], ['1 Juan', 3, 18], ['Apocalipsis', 21, 4], ['Salmos', 4, 8],
-  ['Proverbios', 3, 5], ['Isaías', 12, 2], ['Mateo', 5, 14], ['Juan', 3, 17],
-  ['Romanos', 5, 5], ['Jeremías', 29, 12], ['Génesis', 50, 20], ['Eclesiastés', 4, 12],
-  ['Marcos', 11, 24], ['Lucas', 9, 23], ['Hechos', 16, 31], ['1 Corintios', 9, 24],
-  ['2 Corintios', 4, 18], ['Gálatas', 5, 22], ['Efesios', 3, 20], ['Filipenses', 2, 13],
-  ['Colosenses', 3, 12], ['1 Tesalonicenses', 5, 18], ['2 Timoteo', 4, 7], ['Hebreos', 10, 23],
-  ['Santiago', 1, 17], ['1 Pedro', 4, 10], ['1 Juan', 4, 7], ['Apocalipsis', 22, 13],
-  ['Salmos', 5, 3], ['Proverbios', 3, 6], ['Isaías', 25, 1], ['Mateo', 5, 16],
-  ['Juan', 4, 24], ['Romanos', 5, 8], ['Jeremías', 31, 3], ['Marcos', 12, 30],
-  ['Lucas', 10, 27], ['Hechos', 20, 35], ['1 Corintios', 10, 13], ['2 Corintios', 5, 7],
-  ['Gálatas', 6, 2], ['Efesios', 4, 2], ['Filipenses', 3, 13], ['Colosenses', 3, 13],
-  ['Hebreos', 10, 24], ['Santiago', 1, 19], ['1 Pedro', 5, 6], ['1 Juan', 4, 8],
-  ['Salmos', 8, 1], ['Proverbios', 3, 9], ['Isaías', 26, 3], ['Mateo', 5, 44],
-  ['Juan', 6, 35], ['Romanos', 6, 23], ['Jeremías', 32, 17], ['Marcos', 16, 15],
-  ['Lucas', 11, 9], ['1 Corintios', 10, 31], ['2 Corintios', 5, 17], ['Gálatas', 6, 9],
-  ['Efesios', 4, 29], ['Filipenses', 3, 14], ['Colosenses', 3, 15], ['Hebreos', 11, 1],
-  ['Santiago', 1, 22], ['1 Pedro', 5, 7], ['1 Juan', 4, 16], ['Salmos', 9, 1],
-  ['Proverbios', 4, 23], ['Isaías', 30, 21], ['Mateo', 6, 14], ['Juan', 8, 12],
-  ['Romanos', 8, 1], ['Jeremías', 33, 3], ['Lucas', 12, 7], ['1 Corintios', 12, 27],
-  ['2 Corintios', 9, 7], ['Efesios', 4, 32], ['Filipenses', 4, 4], ['Colosenses', 3, 16],
-  ['Hebreos', 11, 6], ['Santiago', 2, 17], ['1 Pedro', 5, 8], ['1 Juan', 4, 18],
-  ['Salmos', 9, 9], ['Proverbios', 6, 6], ['Isaías', 32, 17], ['Mateo', 6, 21],
-  ['Juan', 8, 32], ['Romanos', 8, 6], ['Lucas', 15, 7], ['1 Corintios', 13, 2],
-  ['2 Corintios', 9, 8], ['Efesios', 5, 2], ['Filipenses', 4, 6], ['Colosenses', 3, 23],
-  ['Hebreos', 12, 1], ['Santiago', 4, 8], ['1 Juan', 4, 19], ['Salmos', 16, 8],
-  ['Proverbios', 10, 12], ['Isaías', 40, 8], ['Mateo', 6, 26], ['Juan', 10, 10],
-  ['Romanos', 8, 18], ['Lucas', 18, 27], ['1 Corintios', 13, 4], ['2 Corintios', 12, 9],
-  ['Efesios', 6, 10], ['Filipenses', 4, 7], ['Hebreos', 12, 2], ['Santiago', 5, 16],
-  ['1 Juan', 5, 14], ['Salmos', 16, 11], ['Proverbios', 11, 25], ['Isaías', 40, 29],
-  ['Mateo', 6, 33], ['Juan', 10, 27], ['Romanos', 8, 26], ['Lucas', 21, 33],
-  ['1 Corintios', 13, 7], ['2 Corintios', 13, 11], ['Efesios', 6, 11], ['Filipenses', 4, 8],
-  ['Hebreos', 13, 5], ['Salmos', 18, 2], ['Proverbios', 12, 25], ['Isaías', 40, 31],
-  ['Mateo', 7, 7], ['Juan', 11, 25], ['Romanos', 8, 28], ['1 Corintios', 13, 13],
-  ['Filipenses', 4, 13], ['Hebreos', 13, 8], ['Salmos', 18, 32], ['Proverbios', 13, 20],
-  ['Isaías', 41, 10], ['Mateo', 7, 12], ['Juan', 13, 34], ['Romanos', 8, 31],
-  ['1 Corintios', 15, 58], ['Filipenses', 4, 19], ['Salmos', 19, 1], ['Proverbios', 14, 29],
-  ['Isaías', 41, 13], ['Mateo', 9, 37], ['Juan', 14, 1], ['Romanos', 8, 37],
-  ['1 Corintios', 16, 14], ['Salmos', 19, 14], ['Proverbios', 15, 1], ['Isaías', 43, 1],
-  ['Mateo', 11, 28], ['Juan', 14, 6], ['Romanos', 8, 38], ['Salmos', 20, 4],
-  ['Proverbios', 15, 13], ['Isaías', 43, 2], ['Mateo', 11, 29], ['Juan', 14, 15],
-  ['Romanos', 10, 9], ['Salmos', 23, 1], ['Proverbios', 16, 3], ['Isaías', 43, 19],
-  ['Mateo', 16, 24], ['Juan', 14, 27], ['Romanos', 10, 17], ['Salmos', 23, 2],
-  ['Proverbios', 16, 9], ['Isaías', 46, 4], ['Mateo', 17, 20], ['Juan', 15, 5],
-  ['Romanos', 12, 1], ['Salmos', 23, 3], ['Proverbios', 16, 24], ['Isaías', 49, 15],
-  ['Mateo', 18, 20], ['Juan', 15, 12], ['Romanos', 12, 2], ['Salmos', 23, 4],
-  ['Proverbios', 17, 17], ['Isaías', 53, 5], ['Mateo', 19, 26], ['Juan', 15, 13],
-  ['Romanos', 12, 10], ['Salmos', 23, 6], ['Proverbios', 17, 22], ['Isaías', 54, 10],
-  ['Mateo', 21, 22], ['Juan', 16, 33], ['Romanos', 12, 12], ['Salmos', 25, 4],
-  ['Proverbios', 18, 10], ['Isaías', 55, 6], ['Mateo', 22, 37], ['Juan', 17, 3],
-  ['Romanos', 12, 21], ['Salmos', 25, 5], ['Proverbios', 18, 24], ['Isaías', 55, 8],
-  ['Mateo', 25, 40], ['Juan', 20, 29], ['Romanos', 14, 8], ['Salmos', 27, 1],
-  ['Proverbios', 19, 21], ['Isaías', 55, 11], ['Mateo', 28, 19], ['Romanos', 15, 4],
-  ['Salmos', 27, 4], ['Proverbios', 20, 7], ['Isaías', 58, 11], ['Mateo', 28, 20],
-  ['Romanos', 15, 13], ['Salmos', 27, 14], ['Proverbios', 21, 21], ['Isaías', 61, 1],
-  ['Salmos', 28, 7], ['Proverbios', 22, 6], ['Isaías', 64, 8], ['Salmos', 29, 11],
-  ['Proverbios', 23, 12], ['Isaías', 66, 13], ['Salmos', 30, 5], ['Proverbios', 24, 16],
-  ['Salmos', 31, 24], ['Proverbios', 27, 17], ['Salmos', 32, 8], ['Proverbios', 28, 13],
-  ['Salmos', 33, 4], ['Proverbios', 29, 25], ['Salmos', 34, 1], ['Proverbios', 30, 5],
-  ['Salmos', 34, 4], ['Proverbios', 31, 25], ['Salmos', 34, 8], ['Proverbios', 31, 30],
-  ['Salmos', 34, 17], ['Salmos', 34, 18], ['Salmos', 36, 5], ['Salmos', 37, 3],
-  ['Salmos', 37, 4], ['Salmos', 37, 5], ['Salmos', 37, 7], ['Salmos', 37, 23],
-  ['Salmos', 40, 1], ['Salmos', 42, 1], ['Salmos', 42, 11], ['Salmos', 46, 1],
-  ['Salmos', 46, 10], ['Salmos', 51, 10], ['Salmos', 55, 22], ['Salmos', 56, 3],
-  ['Salmos', 62, 1], ['Salmos', 62, 8],
-];
+// Un versículo por fecha del año. El 29 de febrero repite el del 28.
+const CALENDARIO = {
+  '01': [
+    'Proverbios 21:30', 'Efesios 4:22', 'Efesios 4:23',
+    'Efesios 4:24', 'Isaías 26:9', 'Salmos 104:33-34',
+    'Lamentaciones 3:22-23', 'Lamentaciones 3:25', 'Isaías 2:22',
+    'Proverbios 16:9', 'Salmos 100:1', 'Salmos 100:2',
+    'Salmos 100:3', 'Salmos 100:4', 'Salmos 100:5',
+    'Proverbios 10:11', 'Romanos 5:1-2', 'Romanos 5:3-4',
+    'Romanos 5:5', 'Romanos 5:6-7', 'Romanos 5:8',
+    'Romanos 5:9-10', '2 Corintios 12:9', 'Salmos 29:2',
+    'Salmos 1:1', 'Salmos 1:1-2', 'Salmos 1:3',
+    'Salmos 1:4', 'Salmos 22:5', 'Proverbios 19:21',
+    'Salmos 84:11',
+  ],
+  '02': [
+    '1 Juan 4:7', '1 Juan 4:8', '1 Juan 4:9',
+    '1 Juan 4:10', '1 Juan 4:11', '1 Juan 4:12',
+    '1 Juan 4:13', '1 Juan 4:15', '1 Juan 4:16',
+    '1 Juan 4:17', '1 Juan 4:18', '1 Juan 4:19',
+    '1 Juan 4:20', 'Filipenses 1:3', '1 Juan 4:21',
+    'Gálatas 5:6', 'Isaías 54:5', 'Gálatas 6:9',
+    'Ezequiel 36:23', 'Proverbios 18:24', 'Isaías 30:18',
+    'Hebreos 10:24-25', 'Éxodo 15:6', 'Salmos 138:8',
+    'Números 6:24-26', 'Isaías 41:10-11', 'Isaías 41:13',
+    '1 Juan 4:4',
+  ],
+  '03': [
+    'Salmos 143:8', 'Salmos 37:1-2', 'Salmos 37:3',
+    'Hechos 2:38', 'Romanos 8:1-2', 'Salmos 119:1',
+    'Hechos 5:32', 'Juan 14:23', 'Romanos 8:3-4',
+    'Gálatas 5:22-23', 'Salmos 37:4', '1 Crónicas 4:10',
+    'Romanos 8:11', 'Proverbios 29:25', 'Isaías 41:10',
+    'Gálatas 3:26-27', 'Romanos 8:14', 'Salmos 37:5-6',
+    'Proverbios 10:21', 'Isaías 41:4', 'Romanos 8:15',
+    'Salmos 37:6-7', 'Romanos 11:33-36', 'Proverbios 10:7',
+    'Salmos 37:16-17', 'Romanos 8:16-17', 'Romanos 8:18',
+    'Romanos 8:26-27', 'Efesios 3:16-17', 'Efesios 3:17-19',
+    'Efesios 3:20-21',
+  ],
+  '04': [
+    '1 Corintios 1:27', '1 Corintios 1:30', 'Filipenses 4:9',
+    'Filipenses 4:4', 'Filipenses 4:5', 'Filipenses 4:6',
+    'Filipenses 4:7', '1 Corintios 15:1', '1 Corintios 15:2',
+    '1 Corintios 15:3-5', '1 Corintios 15:19', 'Filipenses 4:12-13',
+    'Filipenses 4:19', 'Proverbios 10:2', '1 Corintios 15:20',
+    '1 Corintios 15:24', '1 Corintios 15:25-26', '1 Corintios 15:51-53',
+    '1 Corintios 15:54', '1 Corintios 15:55', '1 Corintios 15:57',
+    '1 Corintios 15:58', 'Filipenses 4:23', '2 Crónicas 7:14',
+    'Salmos 121:1-2', 'Salmos 121:3', 'Salmos 121:8',
+    'Salmos 85:6', 'Filipenses 4:8', 'Filipenses 4:20',
+  ],
+  '05': [
+    '1 Pedro 3:15', 'Proverbios 10:12', 'Hechos 1:14',
+    'Santiago 1:5', 'Salmos 139:23-24', 'Proverbios 3:7',
+    'Santiago 3:13', '1 Corintios 2:9', 'Proverbios 10:17',
+    '2 Pedro 3:9', 'Lucas 6:27', 'Mateo 5:13',
+    'Mateo 5:14', 'Hechos 13:2', 'Hechos 13:3',
+    'Proverbios 3:1-2', 'Proverbios 10:29', 'Filipenses 1:19',
+    '1 Pedro 5:6-7', 'Filipenses 1:21', '1 Pedro 5:7',
+    'Efesios 2:10', 'Judas 1:24-25', 'Hechos 16:25',
+    'Jeremías 29:13', 'Jeremías 33:3', 'Isaías 40:28-29',
+    'Proverbios 31:8', 'Gálatas 5:25', 'Gálatas 2:20',
+    'Isaías 40:30-31',
+  ],
+  '06': [
+    'Romanos 6:1-2', 'Gálatas 6:2', 'Proverbios 16:3',
+    'Romanos 6:3-4', 'Salmos 103:5', 'Proverbios 3:5-6',
+    'Mateo 7:7', 'Miqueas 6:8', '1 Juan 1:9',
+    'Isaías 61:10', 'Jeremías 29:11', 'Salmos 103:12',
+    'Romanos 6:13', 'Romanos 8:35-37', 'Santiago 4:15',
+    'Jeremías 6:16', 'Efesios 1:17', '1 Juan 3:18',
+    'Salmos 31:19', 'Lucas 6:38', 'Proverbios 6:20',
+    'Proverbios 18:22', 'Romanos 6:23', 'Salmos 73:23-26',
+    'Mateo 6:25', 'Proverbios 3:25-26', 'Mateo 25:37-40',
+    'Proverbios 10:6', 'Salmos 37:28', 'Mateo 6:33',
+  ],
+  '07': [
+    'Salmos 127:1', 'Juan 17:1', 'Proverbios 10:21',
+    'Gálatas 5:1', 'Juan 17:3', 'Santiago 4:7',
+    'Ezequiel 38:23', 'Santiago 5:16', 'Proverbios 31:10',
+    'Filipenses 4:11', 'Proverbios 16:20', 'Mateo 7:13-14',
+    'Juan 17:4', 'Juan 17:15', 'Salmos 37:16-17',
+    'Proverbios 20:22', 'Juan 17:18', 'Isaías 43:1',
+    'Juan 17:20-21', 'Mateo 25:21', 'Santiago 1:22',
+    'Juan 17:23', 'Juan 17:24', 'Hebreos 13:2',
+    'Juan 17:26', 'Isaías 43:2-3', 'Mateo 7:3-5',
+    'Isaías 57:15', 'Salmos 30:5', 'Mateo 7:1',
+    'Salmos 31:1',
+  ],
+  '08': [
+    'Romanos 8:1-2', 'Isaías 61:1-2', 'Romanos 8:31-32',
+    '1 Juan 5:4', 'Zacarías 4:5-6', '1 Corintios 13:6',
+    '1 Timoteo 6:7-8', 'Proverbios 10:8', 'Salmos 103:8',
+    'Salmos 84:11-12', 'Romanos 8:11', 'Proverbios 3:11-12',
+    'Juan 15:13', 'Romanos 8:14', 'Romanos 8:15-16',
+    'Salmos 31:16', 'Juan 15:16', 'Romanos 8:18',
+    '1 Juan 4:19', 'Efesios 2:19-20', 'Proverbios 3:21-22',
+    'Efesios 6:22', 'Proverbios 16:19', 'Juan 8:31-32',
+    'Proverbios 3:3-4', 'Romanos 8:26', '1 Juan 2:27',
+    'Romanos 8:28', 'Proverbios 14:29', 'Marcos 12:30-31',
+    'Proverbios 3:31-32',
+  ],
+  '09': [
+    'Salmos 91:1', 'Salmos 9:2', 'Salmos 23:1',
+    'Salmos 92:4', 'Salmos 119:105', 'Salmos 23:2-3',
+    'Salmos 107:9', 'Hebreos 4:12', 'Josué 1:9',
+    'Proverbios 10:9', 'Romanos 6:11-12', 'Tito 2:11-12',
+    'Tito 2:13-14', 'Romanos 6:14', 'Romanos 6:15',
+    'Proverbios 16:16', 'Salmos 23:4', 'Mateo 18:20',
+    'Romanos 8:19', 'Romanos 8:23', 'Juan 14:21',
+    'Romanos 12:1-2', 'Lucas 9:23', 'Proverbios 10:24',
+    'Salmos 23:5', 'Salmos 23:6', 'Proverbios 10:32',
+    'Salmos 119:133', 'Mateo 10:38-39', 'Salmos 119:30',
+  ],
+  '10': [
+    'Salmos 34:1', 'Salmos 34:2', 'Salmos 34:3',
+    'Salmos 34:4', 'Salmos 34:5', 'Salmos 34:6',
+    'Salmos 34:7', 'Salmos 34:8', 'Salmos 34:9',
+    'Salmos 34:10', 'Salmos 34:11', 'Salmos 34:12-13',
+    'Salmos 34:14', 'Salmos 34:15', 'Salmos 34:16',
+    'Salmos 34:17', 'Salmos 34:18', 'Salmos 34:19-20',
+    'Salmos 34:21', 'Salmos 34:22', '2 Corintios 1:3-4',
+    '1 Tesalonicenses 3:12', '2 Timoteo 1:7', 'Hechos 1:8',
+    'Efesios 1:4-5', 'Efesios 5:15-16', 'Efesios 6:10',
+    'Efesios 6:11', 'Efesios 6:12', 'Salmos 32:7',
+    '2 Corintios 10:3-5',
+  ],
+  '11': [
+    'Proverbios 27:1', 'Salmos 91:2', 'Romanos 8:3-4',
+    '1 Tesalonicenses 4:14', 'Romanos 6:5-6', 'Hebreos 13:6',
+    '2 Corintios 9:7', 'Romanos 14:8', 'Proverbios 3:9',
+    'Mateo 11:28-30', 'Romanos 14:1', '1 Tesalonicenses 3:12',
+    'Romanos 14:13', 'Romanos 14:4', 'Hechos 16:30-34',
+    '1 Tesalonicenses 5:16-18', 'Sofonías 3:17', '2 Pedro 3:18',
+    'Romanos 14:19', 'Salmos 94:19', 'Efesios 3:20-21',
+    '2 Corintios 7:1', 'Salmos 31:23-24', 'Salmos 37:23-24',
+    'Salmos 27:1', 'Isaías 54:17', 'Filipenses 1:27-28',
+    'Proverbios 31:28-29', 'Filipenses 1:29', 'Proverbios 31:30',
+  ],
+  '12': [
+    'Mateo 1:20', 'Mateo 1:20-21', 'Mateo 1:22-23',
+    'Romanos 1:16', 'Filipenses 2:5-6', 'Filipenses 2:5',
+    'Filipenses 2:9', 'Filipenses 2:9-11', 'Salmos 3:8',
+    'Juan 3:16', 'Juan 3:17', 'Juan 4:13-14',
+    'Romanos 8:38-39', 'Romanos 14:5', 'Juan 1:14',
+    '1 Tesalonicenses 5:6', '2 Corintios 4:17-18', 'Proverbios 31:9',
+    'Salmos 80:19', 'Hechos 13:38-39', 'Hechos 2:21',
+    'Lucas 2:4-5', 'Lucas 2:6-7', 'Lucas 2:10',
+    'Lucas 2:11', 'Lucas 2:14', 'Lucas 2:20',
+    'Juan 1:18', 'Juan 1:11', 'Juan 1:12',
+    'Juan 3:3',
+  ],
+};
 
 // { [version]: { date, data } }
 const cache = {};
@@ -139,12 +200,26 @@ const cache = {};
 const today = () =>
   new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
 
-const diaDelAnio = (fecha) => {
-  const [y, m, d] = fecha.split('-').map(Number);
-  return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(y, 0, 1)) / 86400000);
+// 'Salmos 104:33-34' -> { libro, capitulo, desde, hasta }
+const parsearReferencia = (referencia) => {
+  const m = referencia.match(/^(.+) (\d+):(\d+)(?:-(\d+))?$/);
+  if (!m) return null;
+  return {
+    libro: m[1],
+    capitulo: Number(m[2]),
+    desde: Number(m[3]),
+    hasta: Number(m[4] || m[3]),
+  };
 };
 
-// bolls devuelve el texto con saltos de linea y a veces etiquetas de nota al pie.
+const referenciaDelDia = (fecha) => {
+  const [, mes, dia] = fecha.split('-');
+  const delMes = CALENDARIO[mes];
+  // 29 de febrero: el calendario original tiene 365 días, repetimos el 28.
+  return delMes[Number(dia) - 1] || delMes[delMes.length - 1];
+};
+
+// bolls trae dobles espacios, comillas sueltas y a veces etiquetas de nota al pie.
 const limpiar = (texto = '') =>
   String(texto)
     .replace(/<[^>]+>/g, ' ')
@@ -181,19 +256,27 @@ const dailyVerseController = {
       return res.json({ success: true, data: cached.data });
     }
 
-    const [libro, capitulo, versiculo] = VERSICULOS[diaDelAnio(date) % VERSICULOS.length];
+    const reference = referenciaDelDia(date);
+    const ref = parsearReferencia(reference);
 
     try {
-      const response = await fetch(API(VERSIONES[version], LIBROS[libro], capitulo, versiculo), {
+      if (!ref || !LIBROS[ref.libro]) throw new Error(`Referencia inválida: ${reference}`);
+
+      const response = await fetch(API(VERSIONES[version], LIBROS[ref.libro], ref.capitulo), {
         signal: AbortSignal.timeout(8000),
       });
       if (!response.ok) throw new Error(`bolls respondio ${response.status}`);
 
-      const json = await response.json();
-      const text = limpiar(json?.text);
-      if (!text) throw new Error(`Sin texto para ${libro} ${capitulo}:${versiculo} en ${version}`);
+      const capitulo = await response.json();
+      const text = limpiar(
+        (Array.isArray(capitulo) ? capitulo : [])
+          .filter((v) => v.verse >= ref.desde && v.verse <= ref.hasta)
+          .map((v) => v.text)
+          .join(' ')
+      );
+      if (!text) throw new Error(`Sin texto para ${reference} en ${version}`);
 
-      const data = { text, reference: `${libro} ${capitulo}:${versiculo}`, version, date };
+      const data = { text, reference, version, date };
 
       cache[version] = { date, data };
       res.json({ success: true, data });
@@ -210,7 +293,8 @@ const dailyVerseController = {
 
 module.exports = dailyVerseController;
 module.exports.VERSIONES = Object.keys(VERSIONES);
-module.exports.VERSICULOS = VERSICULOS;
+module.exports.CALENDARIO = CALENDARIO;
 module.exports.LIBROS = LIBROS;
 module.exports.API = API;
 module.exports.MAPA_VERSIONES = VERSIONES;
+module.exports.parsearReferencia = parsearReferencia;
