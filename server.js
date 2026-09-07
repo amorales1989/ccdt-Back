@@ -112,6 +112,7 @@ try {
 
 // Sin try/catch: si esta ruta no carga tiene que reventar acá y no responder 200 vacío.
 const statsRoutes = require('./src/routes/statsRoutes');
+const dailyVerseRoutes = require('./src/routes/dailyVerseRoutes');
 
 let accountingRoutes;
 try {
@@ -291,6 +292,8 @@ if (attendanceRoutes) {
 }
 
 app.use('/api/stats', authMiddleware, statsRoutes);
+
+app.use('/api/daily-verse', authMiddleware, dailyVerseRoutes);
 
 if (accountingRoutes) {
   app.use('/api/accounting', authMiddleware, accountingRoutes);

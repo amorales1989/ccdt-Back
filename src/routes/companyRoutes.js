@@ -1,6 +1,7 @@
 const express = require('express');
 const { supabaseAdmin } = require('../config/supabase');
 const companyRolesController = require('../controllers/companyRolesController');
+const { VERSIONES: VERSIONES_VERSICULO } = require('../controllers/dailyVerseController');
 const router = express.Router();
 
 // GET /api/company - Datos de la empresa del usuario logueado (cualquier rol).
@@ -39,6 +40,44 @@ router.get('/badges', async (req, res, next) => {
       .sort((a, b) => a.sort - b.sort);
 
     res.json({ success: true, data: badges });
+  } catch (error) { next(error); }
+});
+
+// PATCH /api/company/settings - Ajustes del versiculo del dia (solo admin/secretaria).
+// Escritura nueva: va por el back con allowlist de campos, no por supabase.from() del front.
+router.patch('/settings', async (req, res, next) => {
+  try {
+    const roles = [req.profile?.role, ...(req.profile?.roles || [])];
+    if (!roles.includes('admin') && !roles.includes('secretaria')) {
+      return res.status(403).json({ success: false, message: 'Solo el administrador o la secretaría pueden cambiar estos ajustes' });
+    }
+
+    const updates = {};
+    if (req.body.daily_verse_enabled !== undefined) {
+      if (typeof req.body.daily_verse_enabled !== 'boolean') {
+        return res.status(400).json({ success: false, message: 'daily_verse_enabled debe ser booleano' });
+      }
+      updates.daily_verse_enabled = req.body.daily_verse_enabled;
+    }
+    if (req.body.daily_verse_version !== undefined) {
+      if (!VERSIONES_VERSICULO.includes(req.body.daily_verse_version)) {
+        return res.status(400).json({ success: false, message: `Versión inválida. Opciones: ${VERSIONES_VERSICULO.join(', ')}` });
+      }
+      updates.daily_verse_version = req.body.daily_verse_version;
+    }
+    if (!Object.keys(updates).length) {
+      return res.status(400).json({ success: false, message: 'Nada para actualizar' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('companies')
+      .update(updates)
+      .eq('id', req.companyId)
+      .select('daily_verse_enabled, daily_verse_version')
+      .single();
+    if (error) throw error;
+
+    res.json({ success: true, data });
   } catch (error) { next(error); }
 });
 
