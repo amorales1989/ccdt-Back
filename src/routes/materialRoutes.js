@@ -5,6 +5,9 @@ const materialController = require('../controllers/materialController');
 // GET /api/material - Obtener materiales didácticos
 router.get('/', materialController.getAll);
 
+// POST /api/material/upload-url - URL firmada para subir el archivo a R2
+router.post('/upload-url', materialController.presignUpload);
+
 // POST /api/material - Crear nuevo material didáctico
 router.post('/', materialController.create);
 
