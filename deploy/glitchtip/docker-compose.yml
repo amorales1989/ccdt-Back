@@ -1,0 +1,92 @@
+# GlitchTip — reemplazo self-hosted de Sentry (compatible con la API de Sentry,
+# el backend sigue usando @sentry/node sin cambios: solo cambia SENTRY_DSN).
+#
+# Levantar:  cd deploy/glitchtip && cp .env.example .env && <editar .env> && docker compose up -d
+# Ver logs:  docker compose logs -f web worker
+
+# Todos los contenedores de GlitchTip comparten la misma config.
+x-environment: &default-environment
+  DATABASE_URL: postgres://glitchtip:${POSTGRES_PASSWORD}@postgres:5432/glitchtip
+  REDIS_URL: redis://redis:6379/0
+  SECRET_KEY: ${SECRET_KEY}
+  PORT: 8000
+  # Tiene que ser la URL publica exacta (con https), porque de aca sale el DSN
+  # que despues pegas en el .env del back.
+  GLITCHTIP_DOMAIN: ${GLITCHTIP_DOMAIN}
+  DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL}
+  EMAIL_URL: ${EMAIL_URL}
+  # Sin esto queda en '*' y acepta cualquier Host (el propio GlitchTip avisa en
+  # el log de arranque). Solo el hostname, sin esquema, separados por coma.
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+  # Se abre solo para crear tu usuario y se apaga enseguida (ver README, paso 4).
+  # Si queda en true, cualquiera que llegue a la URL se registra solo.
+  ENABLE_USER_REGISTRATION: ${ENABLE_USER_REGISTRATION}
+  ENABLE_ORGANIZATION_CREATION: "false"
+  # Retencion. Sin esto la base crece sin techo y te come el disco del VPS en
+  # unos meses. 60 dias alcanza de sobra para investigar un incidente.
+  GLITCHTIP_MAX_EVENT_LIFE_DAYS: ${GLITCHTIP_MAX_EVENT_LIFE_DAYS}
+  CELERY_WORKER_AUTOSCALE: "1,3"
+  CELERY_WORKER_MAX_TASKS_PER_CHILD: "10000"
+
+services:
+  postgres:
+    # Postgres propio de GlitchTip: NO es el de Supabase ni lo toca.
+    image: postgres:17-alpine
+    mem_limit: 512m
+    environment:
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: glitchtip
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: valkey/valkey:8-alpine
+    mem_limit: 128m
+    restart: unless-stopped
+
+  # Corre las migraciones y termina. No queda levantado.
+  migrate:
+    image: ${GLITCHTIP_IMAGE}
+    depends_on:
+      - postgres
+      - redis
+    command: ./manage.py migrate
+    environment: *default-environment
+
+  web:
+    image: ${GLITCHTIP_IMAGE}
+    # Techo, no reserva. En reposo usa ~180M; el margen es para picos de eventos.
+    # Existe para que el tracker no pueda comerse la RAM del API que monitorea.
+    mem_limit: 768m
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      # Solo loopback: el dominio y el TLS los pone el reverse proxy de adelante.
+      # Si lo desplegas como servicio de Easypanel, borra este bloque entero y
+      # dejá que Traefik llegue al contenedor por la red interna.
+      - "127.0.0.1:${WEB_PORT}:8000"
+    environment: *default-environment
+    volumes:
+      - uploads:/code/uploads
+    restart: unless-stopped
+
+  # Procesa los eventos que entran y corre la limpieza por retencion.
+  # Sin este contenedor los errores se reciben pero nunca aparecen en la UI.
+  worker:
+    image: ${GLITCHTIP_IMAGE}
+    mem_limit: 512m
+    command: ./bin/run-celery-with-beat.sh
+    depends_on:
+      - postgres
+      - redis
+    environment: *default-environment
+    volumes:
+      - uploads:/code/uploads
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+  uploads:

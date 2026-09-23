@@ -1,4 +1,6 @@
-// Inicialización de Sentry — debe importarse ANTES que cualquier otro módulo.
+// Inicialización del SDK de Sentry — debe importarse ANTES que cualquier otro módulo.
+// El DSN apunta a GlitchTip self-hosted (ver deploy/glitchtip/), que habla la misma
+// API. Por eso el SDK y todo el código que lo usa siguen igual: solo cambia el DSN.
 // Carga las variables de entorno antes de leer SENTRY_DSN.
 require('dotenv').config();
 require('dotenv').config({ path: '.env.local', override: true });
@@ -8,15 +10,15 @@ const { nodeProfilingIntegration } = require('@sentry/profiling-node');
 
 const dsn = process.env.SENTRY_DSN;
 
-// Muestreo de performance: 1.0 = 100% de las transacciones. Ajustable por env
-// para no consumir cuota si el tráfico crece (ej. 0.2 = 20%).
+// Muestreo de performance. Apagado por defecto (0): contra GlitchTip self-hosted
+// cada transacción es una fila más en SU Postgres, y al 100% el disco del VPS se va
+// en trazas que nadie mira. Prenderlo puntualmente por env (ej. 0.1) si hace falta.
 const tracesSampleRate = process.env.SENTRY_TRACES_SAMPLE_RATE
   ? Number(process.env.SENTRY_TRACES_SAMPLE_RATE)
-  : 1.0;
+  : 0;
 
-// Muestreo de profiling (detalle a nivel de función dentro de cada traza).
-// Apagado por defecto (0) porque el continuous profiling requiere pay-as-you-go
-// en el plan free de Sentry. Prenderlo puntualmente con la env (ej. 0.2).
+// Profiling: GlitchTip no lo soporta, así que queda en 0. La integración sigue
+// cargada (es inofensiva con sample rate 0) por si algún día se vuelve a Sentry.
 const profileSessionSampleRate = process.env.SENTRY_PROFILES_SAMPLE_RATE
   ? Number(process.env.SENTRY_PROFILES_SAMPLE_RATE)
   : 0;
@@ -37,5 +39,5 @@ Sentry.init({
 });
 
 if (!dsn) {
-  console.warn('⚠️  SENTRY_DSN no configurado — Sentry deshabilitado.');
+  console.warn('⚠️  SENTRY_DSN no configurado — el reporte de errores está deshabilitado.');
 }

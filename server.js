@@ -324,6 +324,14 @@ app.post('/api/heartbeat', authMiddleware, (req, res) => {
   res.json({ success: true });
 });
 
+// Prueba del reporte de errores: tira un 500 real para verificar la cadena completa
+// (Express -> next(error) -> SDK -> GlitchTip). Nunca en produccion.
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/api/debug-error', (req, res, next) => {
+    next(new Error('Error de prueba desde /api/debug-error'));
+  });
+}
+
 // Sentry: captura los errores que llegan a Express (antes de los handlers propios).
 Sentry.setupExpressErrorHandler(app);
 
