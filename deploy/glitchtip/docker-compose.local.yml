@@ -1,0 +1,7 @@
+# Override para probar en la maquina local: publica el puerto en loopback.
+# En el VPS no se usa (ahi rutea Coolify).
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+services:
+  web:
+    ports:
+      - "127.0.0.1:${WEB_PORT}:8000"

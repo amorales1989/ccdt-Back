@@ -77,9 +77,11 @@ El evento tarda unos segundos en aparecer: lo procesa el worker, no el web.
 El contenedor `web` escucha solo en `127.0.0.1`. El TLS y el dominio los pone lo que
 tengas adelante.
 
-**Con Easypanel** (que es lo que corre en este entorno): creá un servicio tipo
-*Compose*, pegá el `docker-compose.yml` sin el bloque `ports` del servicio `web`, y
-dejá que Traefik lo exponga en el dominio. Easypanel se encarga del certificado.
+**Con Coolify** (lo que corre en el VPS): New Resource -> Docker Compose, pegás el
+`docker-compose.yml` **sin el bloque `ports`** del servicio `web` — Coolify enruta por
+la red interna y emite el certificado solo. Las variables `${...}` las detecta al
+parsear el compose y te las pide en la pestaña de Environment Variables. El dominio
+se configura sobre el servicio `web`, apuntando al puerto 8000.
 
 **Con Nginx/Caddy a mano**: proxy normal a `127.0.0.1:8000`. Importante que pase el
 header `Host` tal cual, porque GlitchTip valida contra `GLITCHTIP_DOMAIN`.

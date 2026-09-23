@@ -55,6 +55,9 @@ services:
     command: ./manage.py migrate
     environment: *default-environment
 
+  # Sin `ports` a proposito: en el VPS el dominio y el TLS los pone Coolify, que
+  # enruta por la red interna. Para probar local, levantar con el override:
+  #   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
   web:
     image: ${GLITCHTIP_IMAGE}
     # Techo, no reserva. En reposo usa ~180M; el margen es para picos de eventos.
@@ -63,11 +66,6 @@ services:
     depends_on:
       - postgres
       - redis
-    ports:
-      # Solo loopback: el dominio y el TLS los pone el reverse proxy de adelante.
-      # Si lo desplegas como servicio de Easypanel, borra este bloque entero y
-      # dejá que Traefik llegue al contenedor por la red interna.
-      - "127.0.0.1:${WEB_PORT}:8000"
     environment: *default-environment
     volumes:
       - uploads:/code/uploads
