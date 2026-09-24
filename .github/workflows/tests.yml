@@ -44,9 +44,11 @@ jobs:
           cache: npm
           cache-dependency-path: back/package-lock.json
 
+      # Version fija: es la que esta probada contra este config.toml y este baseline.
+      # Con `latest` el CLI puede cambiar los nombres que emite `status -o env`.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.104.0
 
       - name: Levantar la Supabase local
         working-directory: front
@@ -54,15 +56,35 @@ jobs:
 
       # Mismo archivo que en local (ver tests/README.md). El guard de
       # tests/helpers/env.js corta si esto no apunta a 127.0.0.1.
+      # Se aceptan los dos juegos de nombres: el CLI viejo emite ANON_KEY /
+      # SERVICE_ROLE_KEY y el nuevo PUBLISHABLE_KEY / SECRET_KEY.
       - name: Generar .env.test
         working-directory: front
         run: |
+          set -euo pipefail
+          RAW="$(supabase status -o env | sed -E 's/"//g')"
+          leer() { printf '%s\n' "$RAW" | grep -E "^$1=" | head -1 | cut -d= -f2-; }
+
+          ANON="$(leer ANON_KEY)";          [ -n "$ANON" ]    || ANON="$(leer PUBLISHABLE_KEY)"
+          SERVICE="$(leer SERVICE_ROLE_KEY)"; [ -n "$SERVICE" ] || SERVICE="$(leer SECRET_KEY)"
+
           {
             echo "NODE_ENV=test"
-            supabase status -o env \
-              | sed -E 's/^API_URL=/SUPABASE_URL=/; s/^ANON_KEY=/SUPABASE_ANON_KEY=/; s/^SERVICE_ROLE_KEY=/SUPABASE_SERVICE_KEY=/; s/"//g' \
-              | grep -E "^(SUPABASE_URL|SUPABASE_ANON_KEY|SUPABASE_SERVICE_KEY|JWT_SECRET)="
+            echo "SUPABASE_URL=$(leer API_URL)"
+            echo "SUPABASE_ANON_KEY=$ANON"
+            echo "SUPABASE_SERVICE_KEY=$SERVICE"
+            echo "JWT_SECRET=$(leer JWT_SECRET)"
           } > ../back/.env.test
+
+      # Falla con un mensaje claro si el CLI cambio los nombres. Imprime solo las
+      # claves del archivo, nunca los valores.
+      - name: Verificar .env.test
+        working-directory: back
+        run: |
+          for v in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_KEY JWT_SECRET; do
+            grep -qE "^$v=.+" .env.test || { echo "::error::falta $v en .env.test (cambiaron los nombres de 'supabase status -o env'?)"; exit 1; }
+          done
+          echo "Variables escritas: $(grep -oE '^[A-Z_]+' .env.test | tr '\n' ' ')"
 
       - name: Instalar dependencias
         working-directory: back
