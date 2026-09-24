@@ -54,6 +54,16 @@ jobs:
         working-directory: front
         run: supabase start
 
+      # El esquema copiado de prod arrastra dos Database Webhooks que hacen POST a
+      # un host externo en cada INSERT/UPDATE de profiles y events. El runner no
+      # tiene pg_net, asi que sin esto falla hasta el INSERT del fixture.
+      - name: Desactivar los webhooks en la DB de tests
+        working-directory: front
+        run: |
+          set -euo pipefail
+          DB_URL="$(supabase status -o env | sed -E 's/"//g' | grep -E '^DB_URL=' | cut -d= -f2-)"
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f ../back/tests/sql/preparar-db-tests.sql
+
       # Mismo archivo que en local (ver tests/README.md). El guard de
       # tests/helpers/env.js corta si esto no apunta a 127.0.0.1.
       # Se aceptan los dos juegos de nombres: el CLI viejo emite ANON_KEY /

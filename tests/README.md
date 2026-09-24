@@ -34,6 +34,18 @@ npm test                   # los dos
    } > ../ccdt-Back/.env.test
    ```
 
+3. Desactivar los webhooks de la DB local (una vez por cada `supabase db reset`):
+
+   ```bash
+   psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -f tests/sql/preparar-db-tests.sql
+   ```
+
+   El esquema copiado de producción trae dos Database Webhooks que hacen POST a un host
+   externo en cada INSERT/UPDATE de `profiles` y `events`. Como `authMiddleware` actualiza
+   `last_active_at` en cada request, sin este paso **cada llamada autenticada de la suite
+   dispara un POST saliente**. En CI además rompe: el runner no tiene `pg_net` y el trigger
+   falla con `schema "net" does not exist`.
+
 `tests/helpers/env.js` corta la corrida si `SUPABASE_URL` no apunta a `127.0.0.1`. **No es
 opcional**: el `.env` normal del repo apunta a producción, y los tests de integración crean,
 editan y borran filas.
