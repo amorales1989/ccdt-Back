@@ -10,6 +10,8 @@ auth/
 *.sql
 # Solo los stored procedures se versionan.
 !migrations/sp/*.sql
+# ...y el SQL que prepara la DB de tests (no tiene datos, es DDL).
+!tests/sql/*.sql
 
 # Entorno de tests: apunta a la Supabase local, igual lleva llaves.
 .env.test
