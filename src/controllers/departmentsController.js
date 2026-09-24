@@ -3,6 +3,14 @@ const { supabase, supabaseAdmin } = require('../config/supabase');
 // Quienes ven la pantalla de Departamentos (menu_departamentos en rolePermissions del front).
 const MANAGE_ROLES = ['admin', 'secretaria'];
 
+// El SP `departamento_eliminar` levanta una sola excepción (P0001) y siempre significa que
+// el departamento no existe en esta empresa. Sin traducirla, el errorHandler la devuelve
+// como 500 cuando en realidad es un 404 (lo mismo que pide la regla 5 del CLAUDE.md).
+const comoNoEncontrado = (error) => {
+  if (error?.code === 'P0001') error.status = 404;
+  return error;
+};
+
 const departmentsController = {
   // GET /api/departments
   getAll: async (req, res, next) => {
@@ -295,7 +303,7 @@ const departmentsController = {
       if (error) throw error;
 
       res.json({ success: true, data });
-    } catch (error) { next(error); }
+    } catch (error) { next(comoNoEncontrado(error)); }
   },
 
   // DELETE /api/departments/:id
@@ -322,7 +330,7 @@ const departmentsController = {
         message: 'Departamento eliminado exitosamente',
         data
       });
-    } catch (error) { next(error); }
+    } catch (error) { next(comoNoEncontrado(error)); }
   },
 
   // PUT /api/departments/:id/classes

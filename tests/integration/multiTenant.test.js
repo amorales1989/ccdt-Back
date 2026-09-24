@@ -48,7 +48,7 @@ test('los listados solo traen datos de la empresa del token', async () => {
         '/api/departments',
         '/api/small-groups',
         '/api/topic-records',
-        '/api/accounting/transactions',
+        `/api/accounting/transactions?department_id=${fx.A.department.id}`,
         '/api/attendance/coverage',
         '/api/events',
         '/api/students/stats',
@@ -57,7 +57,9 @@ test('los listados solo traen datos de la empresa del token', async () => {
 
     for (const ruta of listados) {
         const res = await srv.request(ruta, { token: tokenA });
-        assert.ok(res.status < 500, `${ruta} respondió ${res.status}`);
+        // 200 y no "algo que no sea 5xx": con el umbral flojo, un endpoint roto que
+        // devuelve 400 pasaba el test sin haberse ejercitado nunca.
+        assert.equal(res.status, 200, `${ruta} respondió ${res.status}: ${res.text}`);
         sinFugas(res, ruta);
     }
 });
@@ -83,7 +85,12 @@ test('pedir un recurso de otra empresa por id no devuelve sus datos', async () =
 
     for (const ruta of rutas) {
         const res = await srv.request(ruta, { token: tokenA });
-        assert.ok(res.status < 500, `${ruta} respondió ${res.status}`);
+        // Negar el acceso a un recurso ajeno es 200-vacío, 403 o 404 según el endpoint.
+        // Un 400 o un 5xx significa que el endpoint está roto, no que negó el acceso.
+        assert.ok(
+            [200, 403, 404].includes(res.status),
+            `${ruta} respondió ${res.status}: ${res.text}`
+        );
         sinFugas(res, ruta);
     }
 });

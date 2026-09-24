@@ -21,15 +21,41 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL
   };
 } else {
-  // Desarrollo local: usar archivo
-  serviceAccount = require('../../config/serviceAccountKey.json');
+  // Desarrollo local: usar archivo (gitignoreado).
+  // Si no está, NO se revienta en el require: este módulo lo importa
+  // notificationService, del que cuelgan siete routers. Un throw acá los deja sin
+  // montar y esas rutas responden 404 "Ruta no encontrada" en vez de decir que falta
+  // una credencial — el fallback silencioso que la regla 5 del CLAUDE.md pide evitar.
+  try {
+    serviceAccount = require('../../config/serviceAccountKey.json');
+  } catch (err) {
+    serviceAccount = null;
+  }
 }
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  projectId: process.env.FIREBASE_PROJECT_ID || serviceAccount.project_id
-});
+let messaging;
 
-const messaging = admin.messaging();
+if (serviceAccount) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    projectId: process.env.FIREBASE_PROJECT_ID || serviceAccount.project_id
+  });
+  messaging = admin.messaging();
+} else {
+  // Sin credenciales (ej. CI): la app levanta igual y las rutas se montan, pero cualquier
+  // intento real de mandar un push falla con un mensaje explícito en vez de quedar mudo.
+  console.warn('⚠️  Firebase sin credenciales: las notificaciones push quedan deshabilitadas.');
+
+  const sinCredenciales = () => Promise.reject(
+    new Error('Firebase no está configurado: falta FIREBASE_SERVICE_ACCOUNT, FIREBASE_PRIVATE_KEY o config/serviceAccountKey.json')
+  );
+
+  messaging = {
+    send: sinCredenciales,
+    sendEachForMulticast: sinCredenciales,
+    subscribeToTopic: sinCredenciales,
+    unsubscribeFromTopic: sinCredenciales,
+  };
+}
 
 module.exports = { admin, messaging };

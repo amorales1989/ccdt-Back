@@ -41,14 +41,21 @@ const observationsController = {
     getByStudentId: async (req, res, next) => {
         try {
             const { studentId } = req.params;
+            // maybeSingle y no single: pedir un miembro que no existe (o que es de otra
+            // congregación) es un caso normal, no un error de base. Con `single` PostgREST
+            // devuelve PGRST116 y el errorHandler lo traduce a un 400 "Error en la base de
+            // datos", que no le dice nada a quien llama.
             const { data: student, error: studentError } = await supabase
                 .from('students')
                 .select('profile_id')
                 .eq('id', studentId)
                 .eq('company_id', req.companyId)
-                .single();
+                .maybeSingle();
 
             if (studentError) throw studentError;
+            if (!student) {
+                return res.status(404).json({ success: false, message: 'Miembro no encontrado' });
+            }
 
             const scope = await getRequesterScope(req);
 
