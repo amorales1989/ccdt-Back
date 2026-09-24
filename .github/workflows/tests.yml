@@ -1,0 +1,73 @@
+name: tests
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run test:unit
+
+  integration:
+    name: integracion (Supabase local)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: back
+
+      # El proyecto de Supabase (config.toml + migrations) vive en el repo del
+      # front. Si ccdt es privado hace falta un PAT con permiso de lectura en el
+      # secret CCDT_FRONT_TOKEN; si es publico alcanza con el token del workflow.
+      - uses: actions/checkout@v4
+        with:
+          repository: amorales1989/ccdt
+          path: front
+          token: ${{ secrets.CCDT_FRONT_TOKEN || github.token }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: back/package-lock.json
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Levantar la Supabase local
+        working-directory: front
+        run: supabase start
+
+      # Mismo archivo que en local (ver tests/README.md). El guard de
+      # tests/helpers/env.js corta si esto no apunta a 127.0.0.1.
+      - name: Generar .env.test
+        working-directory: front
+        run: |
+          {
+            echo "NODE_ENV=test"
+            supabase status -o env \
+              | sed -E 's/^API_URL=/SUPABASE_URL=/; s/^ANON_KEY=/SUPABASE_ANON_KEY=/; s/^SERVICE_ROLE_KEY=/SUPABASE_SERVICE_KEY=/; s/"//g' \
+              | grep -E "^(SUPABASE_URL|SUPABASE_ANON_KEY|SUPABASE_SERVICE_KEY|JWT_SECRET)="
+          } > ../back/.env.test
+
+      - name: Instalar dependencias
+        working-directory: back
+        run: npm ci
+
+      - name: Tests de integracion
+        working-directory: back
+        run: npm run test:integration
