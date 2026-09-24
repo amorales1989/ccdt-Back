@@ -43,9 +43,13 @@ const errorHandler = (err, req, res, next) => {
     });
   }
 
-  // Error genérico del servidor
+  // Error genérico del servidor.
+  // `code` viaja al front cuando el error lo trae (MEMBER_LIMIT_REACHED, GROUP_ARCHIVED,
+  // GROUP_CAPACITY_REACHED): sin esto, un error lanzado con next(err) llega sin código y la
+  // pantalla no puede distinguirlo de un 500 cualquiera.
   res.status(err.status || 500).json({
     success: false,
+    ...(err.code ? { code: err.code } : {}),
     message: err.message || 'Error interno del servidor',
     error: process.env.NODE_ENV === 'development' ? err.stack : 'Error interno'
   });

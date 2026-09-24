@@ -53,9 +53,15 @@ Lo de abajo es especifico del backend.
 - Si agregas un dominio nuevo de front, agregarlo a la allowlist en `server.js`, no relajar la regla.
 
 ## 9. Tests
-- No hay tests aun (`npm test` es un stub). Antes de tocar logica critica (auth, company_id,
-  autorizaciones, notificaciones), agregar al menos un test que cubra el happy path y el caso de
-  aislamiento multi-tenant (que NO devuelva datos de otra empresa).
+- `npm run test:unit` (logica pura, no necesita nada levantado) y `npm run test:integration`
+  (la app real contra la Supabase LOCAL). `npm test` corre los dos. Ver `tests/README.md`.
+- Antes de tocar logica critica (auth, company_id, autorizaciones, notificaciones), agregar al
+  menos un test que cubra el happy path y el caso de aislamiento multi-tenant (que NO devuelva
+  datos de otra empresa). Endpoint nuevo = fila nueva en `tests/integration/multiTenant.test.js`.
+- La integracion levanta la app con `src/app.js` (sin cron ni WhatsApp) y usa el fixture de
+  `tests/helpers/fixture.js`: dos congregaciones con usuarios y token real.
+- `tests/helpers/env.js` corta la corrida si `SUPABASE_URL` no apunta a `127.0.0.1`. No sacarlo:
+  el `.env` del repo apunta a produccion y los tests escriben.
 - Validar manualmente endpoints nuevos con un token real (o curl) antes de declarar hecho.
 
 ## 10. Servicios externos (WhatsApp / FCM / email)
