@@ -223,6 +223,20 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
+// Health-check de las sesiones de WhatsApp para Uptime Kuma: 200 si todas las sesiones
+// vinculadas en disco están OPEN, 503 si alguna se cayó (así un monitor HTTP común
+// alcanza, sin keyword). Público como /api/health: no expone datos de las empresas.
+app.get('/api/health/whatsapp', (req, res) => {
+  const WhatsAppService = require('./services/whatsappService');
+  const health = WhatsAppService.getSessionsHealth();
+
+  res.status(health.ok ? 200 : 503).json({
+    status: health.ok ? 'OK' : 'DEGRADED',
+    timestamp: new Date().toISOString(),
+    sessions: health.sessions
+  });
+});
+
 // API Routes con verificación de tipo y autenticación
 if (eventsRoutes) {
   app.use('/api/events', authMiddleware, eventsRoutes);

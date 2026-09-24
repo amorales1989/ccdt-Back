@@ -4,6 +4,7 @@ const BirthdayService = require('../services/birthdayService');
 const AbsenceService = require('../services/absenceService');
 const AttendanceReminderService = require('../services/attendanceReminderService');
 const WhatsAppService = require('../services/whatsappService');
+const { pushHeartbeat } = require('../services/kumaService');
 
 const initScheduledJobs = () => {
     console.log('⏰ Inicializando Cron Jobs...');
@@ -22,9 +23,11 @@ const initScheduledJobs = () => {
                     console.log(`✅ [Cron Job] Empresa ${company.id} finalizada:`, result);
                 }
             }
+            await pushHeartbeat('cumpleanios');
         } catch (error) {
             console.error('❌ [Cron Job] Error en ejecución de cumpleaños:', error);
             Sentry.captureException(error, { tags: { job: 'cumpleanios' } });
+            await pushHeartbeat('cumpleanios', { ok: false, msg: error.message });
         }
     }, {
         scheduled: true,
@@ -55,9 +58,11 @@ const initScheduledJobs = () => {
                 }
             }
             console.log('✅ [Cron Job] Reportes matutinos enviados.');
+            await pushHeartbeat('reporte-matutino');
         } catch (error) {
             console.error('❌ [Cron Job] Error en Reporte matutino:', error.message);
             Sentry.captureException(error, { tags: { job: 'reporte-matutino' } });
+            await pushHeartbeat('reporte-matutino', { ok: false, msg: error.message });
         }
     }, {
         scheduled: true,
@@ -89,9 +94,11 @@ const initScheduledJobs = () => {
                 }
             }
             console.log('✅ [Cron Job] Reportes nocturnos enviados.');
+            await pushHeartbeat('reporte-nocturno');
         } catch (error) {
             console.error('❌ [Cron Job] Error en Reporte nocturno:', error.message);
             Sentry.captureException(error, { tags: { job: 'reporte-nocturno' } });
+            await pushHeartbeat('reporte-nocturno', { ok: false, msg: error.message });
         }
     }, {
         scheduled: true,
@@ -215,9 +222,11 @@ const initScheduledJobs = () => {
                     console.log(`✅ [Cron Job] Alertas finalizadas en Empresa ${companyId}. Enviados: ${bulkResult.sent}, Fallidos: ${bulkResult.failed}.`);
                 }
             }
+            await pushHeartbeat('solicitudes-pendientes');
         } catch (error) {
             console.error('❌ [Cron Job] Error crítico en alertas de solicitudes:', error.message);
             Sentry.captureException(error, { tags: { job: 'solicitudes-pendientes' } });
+            await pushHeartbeat('solicitudes-pendientes', { ok: false, msg: error.message });
         }
     }, {
         scheduled: true,
@@ -271,9 +280,11 @@ const initScheduledJobs = () => {
                 const result = await WhatsAppService.sendBulkMessages(c.id, bulk, message);
                 console.log(`✅ [Cron Job] Vencimiento empresa ${c.id} (${diffDays}d): enviados ${result.sent}, fallidos ${result.failed}.`);
             }
+            await pushHeartbeat('vencimiento-suscripcion');
         } catch (error) {
             console.error('❌ [Cron Job] Error en recordatorios de vencimiento:', error.message);
             Sentry.captureException(error, { tags: { job: 'vencimiento-suscripcion' } });
+            await pushHeartbeat('vencimiento-suscripcion', { ok: false, msg: error.message });
         }
     }, {
         scheduled: true,
@@ -295,9 +306,11 @@ const initScheduledJobs = () => {
                     console.log(`✅ [Cron Job] Ausencias empresa ${company.id}:`, result);
                 }
             }
+            await pushHeartbeat('ausencias');
         } catch (error) {
             console.error('❌ [Cron Job] Error en verificación de ausencias:', error);
             Sentry.captureException(error, { tags: { job: 'ausencias' } });
+            await pushHeartbeat('ausencias', { ok: false, msg: error.message });
         }
     }, {
         scheduled: true,
@@ -319,9 +332,11 @@ const initScheduledJobs = () => {
                     console.log(`✅ [Cron Job] Asistencia sin tomar empresa ${company.id}:`, result);
                 }
             }
+            await pushHeartbeat('asistencia-no-tomada');
         } catch (error) {
             console.error('❌ [Cron Job] Error en verificación de asistencia sin tomar:', error);
             Sentry.captureException(error, { tags: { job: 'asistencia-no-tomada' } });
+            await pushHeartbeat('asistencia-no-tomada', { ok: false, msg: error.message });
         }
     }, {
         scheduled: true,
@@ -343,9 +358,11 @@ const initScheduledJobs = () => {
                 .not('id', 'is', null);
             if (error) throw error;
             console.log('✅ [Cron Job] Sesiones invalidadas para todas las empresas.');
+            await pushHeartbeat('cierre-sesiones');
         } catch (error) {
             console.error('❌ [Cron Job] Error en cierre global de sesiones:', error);
             Sentry.captureException(error, { tags: { job: 'cierre-sesiones' } });
+            await pushHeartbeat('cierre-sesiones', { ok: false, msg: error.message });
         }
     }, {
         scheduled: true,

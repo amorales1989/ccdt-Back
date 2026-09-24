@@ -353,6 +353,31 @@ class WhatsAppService {
         return results;
     }
 
+    /**
+     * Estado de las sesiones para el health-check de Uptime Kuma.
+     * "Vinculada" = hay creds.json registrado en disco, o sea que la sesión DEBERÍA
+     * estar arriba: si no está OPEN es una caída real, no una empresa sin configurar.
+     */
+    getSessionsHealth() {
+        const authPath = process.env.WHATSAPP_AUTH_DIR || path.join(__dirname, '../../auth');
+        const sessions = [];
+
+        if (fs.existsSync(authPath)) {
+            for (const folder of fs.readdirSync(authPath)) {
+                if (!folder.startsWith('company_')) continue;
+                if (!this.esSesionVinculada(path.join(authPath, folder))) continue;
+
+                const companyId = Number(folder.replace('company_', ''));
+                sessions.push({ companyId, status: this.getStatus(companyId) });
+            }
+        }
+
+        return {
+            ok: sessions.every(s => s.status === 'connected'),
+            sessions
+        };
+    }
+
     getStatus(companyId) {
         // Solo OPEN cuenta como conectado: un socket presente pero caído/reconectando
         // reportaba 'connected' falsamente.
